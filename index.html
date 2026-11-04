@@ -165,6 +165,9 @@ nav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,25
 .mk.pvip{background:linear-gradient(135deg,#8B5CF6,#FF3D8F);color:#fff}
 .mk.dng{background:#FF2D20;color:#fff;letter-spacing:.5px}
 .mk.noc{background:rgba(31,23,36,.1);color:var(--tx3)}
+.nick{font-weight:700;color:var(--vio);font-size:13.5px}
+.mk.r{background:rgba(0,176,80,.14);color:#00913F}
+.mk.d{background:rgba(255,122,0,.16);color:#C55A00}
 .mk.fl{background:rgba(255,195,25,.2)}
 .mk.ig{background:rgba(219,39,119,.12);color:#BE185D}
 .mk.wa{background:rgba(13,148,136,.13);color:#0B7268}
@@ -361,10 +364,12 @@ function migrate(s){
 }
 
 /* ---------- numeros de asistente ---------- */
+function avales(){ return Array.isArray(S.meta.avales)? S.meta.avales : []; }
+function nombreAval(i){ if(i==="legacy") return "alguien"; return crewName(i) || i; }
 function knownBy(g){ return Array.isArray(g.knownBy)? g.knownBy : (g.known? ["legacy"] : []); }
 function loConozco(g){ return knownBy(g).indexOf(ME)>=0; }
 function puntos(g){ return knownBy(g).length; }
-function quienesConocen(g){ return knownBy(g).map(i=> i==="legacy" ? "alguien" : (crewName(i)||"?")); }
+function quienesConocen(g){ return knownBy(g).map(nombreAval); }
 function numerar(s){
   let n=+s.meta.lastNum||0;
   s.guests.forEach(g=>{ if(+g.num>n) n=+g.num; });
@@ -664,10 +669,13 @@ function gFiltered(){
     sexF:(a,b)=>(so[a.sex]-so[b.sex])||az(a,b),
     sexM:(a,b)=>(((a.sex==="M"?0:a.sex==="F"?1:2))-((b.sex==="M"?0:b.sex==="F"?1:2)))||az(a,b),
     conf:(a,b)=>((co[a.conf]??3)-(co[b.conf]??3))||az(a,b),
-    new:(a,b)=>(b.ts||0)-(a.ts||0)||az(a,b), old:(a,b)=>(a.ts||0)-(b.ts||0)||az(a,b)}[GF.sort]||az;
+    new:(a,b)=>(b.ts||0)-(a.ts||0)||az(a,b), old:(a,b)=>(a.ts||0)-(b.ts||0)||az(a,b),
+    pts:(a,b)=>puntos(b)-puntos(a)||az(a,b),
+    resp:(a,b)=>((+b.resp||0)-(+a.resp||0))||az(a,b),
+    deps:(a,b)=>((+b.deps||0)-(+a.deps||0))||az(a,b)}[GF.sort]||az;
   const EX={vip:g=>!!g.vip, pvip:g=>!!g.pvip, flag:g=>!!g.flag, danger:g=>!!g.danger, nocon:g=>!!g.nocon, known:g=>puntos(g)>0};
   const okSex=g=> !GF.sex ? true : (EX[GF.sex] ? EX[GF.sex](g) : g.sex===GF.sex);
-  return S.guests.filter(g=>okSex(g)&&(!GF.conf||g.conf===GF.conf)&&(!q||norm(g.name).includes(q))).sort(cmp);
+  return S.guests.filter(g=>okSex(g)&&(!GF.conf||g.conf===GF.conf)&&(!q||norm(g.name).includes(q)||norm(g.nick||"").includes(q)||norm(g.full||"").includes(q))).sort(cmp);
 }
 function gCountTxt(n){return n===S.guests.length?`${n} registros`:`${n} de ${S.guests.length} registros`;}
 let GU=null, GSCROLL=0;
@@ -702,6 +710,8 @@ function vFicha(g){
     <p class="sub">se guarda al tocar Guardar</p>
     <label class="lb">Nombre en la lista</label>
     <div class="row"><input id="guName" value="${esc(g.name)}"></div>
+    <label class="lb">Apodo</label>
+    <div class="row"><input id="guNick" placeholder="Como le dicen" value="${esc(g.nick||"")}"></div>
     <label class="lb">Nombre completo</label>
     <div class="row"><input id="guFull" placeholder="Nombre y apellidos" value="${esc(g.full||"")}"></div>
     <label class="lb">Instagram</label>
@@ -715,6 +725,38 @@ function vFicha(g){
       ${g.ig?`<a class="btn btn-gh btn-s" style="text-align:center;text-decoration:none;color:var(--tx2);padding:11px" href="https://instagram.com/${encodeURIComponent(g.ig)}" target="_blank" rel="noopener">Abrir Instagram</a>`:""}
       ${wa?`<a class="btn btn-gh btn-s" style="text-align:center;text-decoration:none;color:var(--tx2);padding:11px" href="https://wa.me/52${wa}" target="_blank" rel="noopener">Abrir WhatsApp</a>`:""}
     </div>
+  </div>
+
+  <div class="card">
+    <h2>Quién lo conoce</h2>
+    <p class="sub">${puntos(g)} aval${puntos(g)===1?"":"es"}</p>
+    ${puntos(g)?`<ul class="lst">${knownBy(g).map(i=>`<li>
+      <span class="pill ${crewName(i)?"p-vio":"p-n"}">${crewName(i)?"consejo":"externo"}</span>
+      <div class="li-main"><div class="li-t">${esc(nombreAval(i))}</div></div>
+      <button class="btn-x" data-gunknow="${g.id}|${encodeURIComponent(i)}">✕</button></li>`).join("")}</ul>`:`<div class="empty">Nadie lo ha avalado</div>`}
+    <hr class="sep">
+    <div class="row">
+      <select id="guAval">
+        <option value="">Elegir quién lo conoce</option>
+        ${S.crew.filter(c=>knownBy(g).indexOf(c.id)<0).map(c=>`<option value="${c.id}">${esc(c.name)}</option>`).join("")}
+        ${avales().filter(n=>knownBy(g).indexOf(n)<0).map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("")}
+      </select>
+      <button class="btn-g" style="flex:0 0 86px" data-gaval="${g.id}">Agregar</button>
+    </div>
+    <div class="row">
+      <input id="guAvalNew" placeholder="O escribe uno nuevo (ej. perrito)">
+      <button class="btn-gh" style="flex:0 0 86px" data-gavalnew="${g.id}">Crear</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Responsabilidad</h2>
+    <p class="sub">dos escalas distintas</p>
+    <label class="lb">Qué tan responsable es (0 nada, 7 total)</label>
+    <div class="row"><select data-gresp="${g.id}">${[0,1,2,3,4,5,6,7].map(n=>`<option value="${n}"${(+g.resp||0)===n?" selected":""}>${n}${n===0?" · sin evaluar":n<=2?" · poco":n<=4?" · medio":n<=6?" · alto":" · total"}</option>`).join("")}</select></div>
+    <label class="lb">Cuántos dependen de él o cuántos invitó (0 a 5)</label>
+    <div class="row"><select data-gdeps="${g.id}">${[0,1,2,3,4,5].map(n=>`<option value="${n}"${(+g.deps||0)===n?" selected":""}>${n}${n===0?" · ninguno":n===5?" · cinco o más":""}</option>`).join("")}</select></div>
+    ${(+g.deps||0)>=3?`<div class="tiny" style="color:#C55A00;margin-top:8px">Trae gente. Conviene que conozca las reglas.</div>`:""}
   </div>
 
   <div class="card">
@@ -732,6 +774,9 @@ function vFicha(g){
       <li><div class="li-main"><div class="li-t">Instagram</div></div><span class="pill ${g.ig?"p-vio":"p-n"}">${g.ig?"@"+esc(g.ig):"falta"}</span></li>
       <li><div class="li-main"><div class="li-t">WhatsApp</div></div><span class="pill ${g.wa?"p-vio":"p-n"}">${g.wa?esc(g.wa):"falta"}</span></li>
       <li><div class="li-main"><div class="li-t">Nombre completo</div></div><span class="pill ${g.full?"p-ok":"p-n"}">${g.full?"listo":"falta"}</span></li>
+      <li><div class="li-main"><div class="li-t">Apodo</div></div><span class="pill ${g.nick?"p-vio":"p-n"}">${g.nick?esc(g.nick):"falta"}</span></li>
+      <li><div class="li-main"><div class="li-t">Responsabilidad</div></div><span class="pill ${(+g.resp||0)>=5?"p-ok":(+g.resp||0)>=3?"p-mid":"p-n"}">${+g.resp||0}/7</span></li>
+      <li><div class="li-main"><div class="li-t">Dependen de él</div></div><span class="pill ${(+g.deps||0)>=3?"p-mid":"p-n"}">${+g.deps||0}/5</span></li>
       <li><div class="li-main"><div class="li-t">Lo trae</div></div><span class="pill p-n">${esc(g.by||"—")}</span></li>
     </ul>
     ${g.note?`<div class="tiny" style="margin-top:10px">Nota: ${esc(g.note)}</div>`:""}
@@ -742,12 +787,12 @@ function vGente(){
   const st=stats();
   if(GU){ const g=S.guests.find(x=>x.id===GU); if(g) return vFicha(g); GU=null; }
   const dudas=S.guests.filter(g=>g.sex==="?");
-  const marcas=g=>[g.danger?'<span class="mk dng">!!</span>':"", g.pvip?'<span class="mk pvip">♛</span>':"", g.vip?'<span class="mk vip">VIP</span>':"", g.nocon?'<span class="mk noc">?</span>':"", puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
+  const marcas=g=>[g.danger?'<span class="mk dng">!!</span>':"", (+g.resp)?'<span class="mk r">R'+g.resp+'</span>':"", (+g.deps)?'<span class="mk d">+'+g.deps+'</span>':"", g.pvip?'<span class="mk pvip">♛</span>':"", g.vip?'<span class="mk vip">VIP</span>':"", g.nocon?'<span class="mk noc">?</span>':"", puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
                    g.ig?'<span class="mk ig">IG</span>':"", g.wa?'<span class="mk wa">WA</span>':"",
                    g.full?'<span class="mk nm">N</span>':""].join("");
   const list=g=>`<li data-n="${esc(norm(g.name))}" data-gopen="${g.id}">
       <span class="pill ${g.sex==="M"?"p-m":g.sex==="F"?"p-f":"p-q"}">${g.sex==="M"?"H":g.sex==="F"?"M":"?"}</span>
-      <div class="li-main"><div class="li-t">${esc(g.name)} ${marcas(g)}</div>
+      <div class="li-main"><div class="li-t">${esc(g.name)}${g.nick?` <span class="nick">“${esc(g.nick)}”</span>`:""} ${marcas(g)}</div>
       <div class="li-s">${folio(g.num)} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"}${puntos(g)?" · "+puntos(g)+" pt":""}</div></div>
       <button class="btn-s ${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}" title="Lo conozco">🤙</button>
       <button class="btn-s ${g.vip?"btn-vip":"btn-gh"}" data-gvip="${g.id}" title="VIP">★</button>
@@ -816,7 +861,7 @@ function vGente(){
       ${sel("gFSex",[["","Todos"],["M","Hombres"],["F","Mujeres"],["?","Sin clasificar"],["vip","Solo VIP"],["pvip","VIP del consejo"],["flag","Con banderita"],["danger","Señalados !!"],["nocon","No conocemos"],["known","Con aval"]],GF.sex)}
       ${sel("gFConf",[["","Cualquier estado"],["si","Confirmados"],["tal","Tal vez"],["no","No vienen"]],GF.conf)}
     </div>
-    <div class="row">${sel("gSort",[["az","A → Z"],["za","Z → A"],["sexF","Sexo (mujeres primero)"],["sexM","Sexo (hombres primero)"],["conf","Confirmación"],["new","Más recientes"],["old","Más antiguos"]],GF.sort)}</div>
+    <div class="row">${sel("gSort",[["az","A → Z"],["za","Z → A"],["sexF","Sexo (mujeres primero)"],["sexM","Sexo (hombres primero)"],["conf","Confirmación"],["pts","Más avalados"],["resp","Responsabilidad"],["deps","Dependientes"],["new","Más recientes"],["old","Más antiguos"]],GF.sort)}</div>
     <button class="btn-gh btn-w btn-s" id="gToggle" style="margin-bottom:10px">${LIST?"Ocultar la lista":"Mostrar la lista ("+fl.length+")"}</button>
     ${!LIST?"":(S.guests.length?`<ul class="lst" id="gList">${fl.map(list).join("")}</ul>`:`<div class="empty">Nadie en la lista todavía</div>`)}`;})()}
   </div>
@@ -1451,6 +1496,22 @@ document.addEventListener("click",e=>{
   /* lista colapsable */
   if(id==="gToggle"){LIST=!LIST;localStorage.setItem("mngostat.list",LIST?"1":"0");render();return;}
 
+  if(a("data-gaval")){const ga=S.guests.find(x=>x.id===a("data-gaval")); const v=$("#guAval").value;
+    if(!ga||!v) return toast("Elige a alguien");
+    const l=knownBy(ga).slice(); if(l.indexOf(v)<0) l.push(v);
+    ga.knownBy=l; ga.known=l.length>0;
+    save("guests","anotó que "+nombreAval(v)+" conoce a "+ga.name,ga.id); return;}
+  if(a("data-gavalnew")){const gb2=S.guests.find(x=>x.id===a("data-gavalnew")); const nv=$("#guAvalNew").value.trim();
+    if(!gb2||!nv) return toast("Escribe un nombre");
+    const cat=avales().slice(); if(cat.indexOf(nv)<0) cat.push(nv); S.meta.avales=cat;
+    const l=knownBy(gb2).slice(); if(l.indexOf(nv)<0) l.push(nv);
+    gb2.knownBy=l; gb2.known=l.length>0;
+    save("meta");
+    save("guests","anotó que "+nv+" conoce a "+gb2.name,gb2.id); return;}
+  if(a("data-gunknow")){const [gi,av]=a("data-gunknow").split("|"); const gc=S.guests.find(x=>x.id===gi);
+    if(!gc) return; const dec=decodeURIComponent(av);
+    gc.knownBy=knownBy(gc).filter(x=>x!==dec); gc.known=gc.knownBy.length>0;
+    save("guests","quitó a "+nombreAval(dec)+" de los que conocen a "+gc.name,gc.id); return;}
   if(a("data-gdanger")){const gd=S.guests.find(x=>x.id===a("data-gdanger")); if(!gd) return;
     gd.danger=!gd.danger; save("guests",(gd.danger?"⚠️ marcó como violento a ":"quitó el señalamiento de violencia a ")+gd.name,gd.id); return;}
   if(a("data-gpvip")){const gp=S.guests.find(x=>x.id===a("data-gpvip")); if(!gp) return;
@@ -1474,7 +1535,7 @@ document.addEventListener("click",e=>{
     LIST=true; localStorage.setItem("mngostat.list","1"); setTimeout(volverScroll,0);
     const antes=g4.name;
     const nn=$("#guName").value.trim(); if(nn) g4.name=nn;
-    g4.full=$("#guFull").value.trim(); g4.ig=$("#guIg").value.trim().replace(/^@/,"");
+    g4.nick=$("#guNick").value.trim(); g4.full=$("#guFull").value.trim(); g4.ig=$("#guIg").value.trim().replace(/^@/,"");
     g4.wa=$("#guWa").value.trim(); g4.note=$("#guNote").value.trim();
     GU=null;
     save("guests", antes!==g4.name ? ("renombró a "+antes+" como "+g4.name) : ("completó los datos de "+(g4.full||g4.name)), g4.id);
@@ -1558,6 +1619,10 @@ document.addEventListener("change",e=>{
   if(t.id==="aFile"&&t.files[0]){const r=new FileReader();
     r.onload=()=>{try{S=Object.assign(DEF(),JSON.parse(r.result));save();toast("Importado");}catch(x){toast("Archivo inválido");}};
     r.readAsText(t.files[0]);return;}
+  if(t.dataset.gresp){const gr=S.guests.find(x=>x.id===t.dataset.gresp); if(!gr) return;
+    gr.resp=+t.value||0; save("guests","puso la responsabilidad de "+gr.name+" en "+gr.resp+"/7",gr.id); return;}
+  if(t.dataset.gdeps){const gd2=S.guests.find(x=>x.id===t.dataset.gdeps); if(!gd2) return;
+    gd2.deps=+t.value||0; save("guests","anotó que "+gd2.deps+" personas dependen de "+gd2.name,gd2.id); return;}
   if(t.dataset.star){const s2=S.supplies.find(x=>x.id===t.dataset.star); if(!s2) return;
     const raw=String(t.value).trim().replace(",",".");
     let n2; if(/^[+−-]/.test(raw)) n2=(+s2.target||0)+(+raw.replace("−","-")||0); else n2=+raw||0;
