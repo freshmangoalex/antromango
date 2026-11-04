@@ -16,7 +16,7 @@
   --line:rgba(31,23,36,.13);
   --tx:#1F1724; --tx2:#5C5169; --tx3:#8C8299;
   --sh:0 2px 12px rgba(31,23,36,.07);
-  --red:#E8342B; --org:#FF7A1A; --yel:#FFC319; --lim:#9ACB2E; --grn:#16A34A; --tea:#14B8A6; --pnk:#FF5FA2; --vio:#A472FF;
+  --red:#FF2D20; --org:#FF7A00; --yel:#FFC800; --lim:#A6E022; --grn:#00B050; --tea:#00C4B4; --pnk:#FF3D8F; --vio:#8B5CF6;
   --ok:#16A34A; --warn:#FFC319; --bad:#E8342B;
   --r:22px; --r2:16px; --r3:12px;
   --pad: max(14px, env(safe-area-inset-left));
@@ -65,7 +65,7 @@ header{position:sticky;top:0;z-index:40;background:linear-gradient(180deg,#FFFFF
 .stat .v{font-size:25px;font-weight:800;letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
 .stat .u{font-size:11.5px;color:var(--tx3);margin-top:4px;font-weight:700}
 .stat.acc{background:linear-gradient(140deg,#FFF7EF,#FFFFFF)}
-.v.red{color:#D4281F}.v.grn{color:#15803D}.v.yel{color:#B07B06}.v.tea{color:#0D9488}.v.pnk{color:#DB2777}.v.org{color:#E0620C}.v.vio{color:#7C3AED}
+.v.red{color:#F01B0E}.v.grn{color:#009A45}.v.yel{color:#C58A00}.v.tea{color:#00A99B}.v.pnk{color:#F0137A}.v.org{color:#F26B00}.v.vio{color:#7C3AED}
 
 /* BARS */
 .bar{height:11px;border-radius:999px;background:rgba(31,23,36,.085);overflow:hidden;margin:9px 0 0}
@@ -112,14 +112,14 @@ ul.lst li{display:flex;align-items:center;gap:10px;background:var(--bg2);border:
 
 /* PILLS */
 .pill{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:800;letter-spacing:.2px;white-space:nowrap}
-.p-m{background:rgba(13,148,136,.13);color:#0B7268}
-.p-f{background:rgba(219,39,119,.12);color:#BE185D}
+.p-m{background:rgba(0,196,180,.18);color:#00897E}
+.p-f{background:rgba(255,61,143,.16);color:#D40F67}
 .p-q{background:rgba(255,195,25,.22);color:#9A6B05}
-.p-ok{background:rgba(21,128,61,.12);color:#15803D}
+.p-ok{background:rgba(0,176,80,.16);color:#00913F}
 .p-mid{background:rgba(255,195,25,.22);color:#9A6B05}
-.p-bad{background:rgba(212,40,31,.11);color:#C8271E}
+.p-bad{background:rgba(255,45,32,.14);color:#E01A0C}
 .p-n{background:rgba(31,23,36,.06);color:var(--tx2)}
-.p-vio{background:rgba(124,58,237,.11);color:#6D28D9}
+.p-vio{background:rgba(139,92,246,.16);color:#6D28D9}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
 .chip{border-radius:999px;padding:8px 14px;font-size:13px;font-weight:800;background:var(--card);border:1.5px solid var(--line);color:var(--tx2);cursor:pointer}
 .chip.on{background:linear-gradient(135deg,var(--red),var(--org));color:#fff;border-color:transparent}
@@ -351,6 +351,10 @@ function migrate(s){
 }
 
 /* ---------- numeros de asistente ---------- */
+function knownBy(g){ return Array.isArray(g.knownBy)? g.knownBy : (g.known? ["legacy"] : []); }
+function loConozco(g){ return knownBy(g).indexOf(ME)>=0; }
+function puntos(g){ return knownBy(g).length; }
+function quienesConocen(g){ return knownBy(g).map(i=> i==="legacy" ? "alguien" : (crewName(i)||"?")); }
 function numerar(s){
   let n=+s.meta.lastNum||0;
   s.guests.forEach(g=>{ if(+g.num>n) n=+g.num; });
@@ -442,7 +446,7 @@ function migSup(s){
 }
 function hayDe(cat){ return (S.supplies||[]).filter(s=>s.cat===cat).reduce((a,s)=>a+(+s.qty||0),0); }
 /* ---------- anillo de progreso ---------- */
-function colorPct(p){ const x=Math.max(0,Math.min(100,p||0)); return "hsl("+Math.round(x*1.2)+" 70% 38%)"; }
+function colorPct(p){ const x=Math.max(0,Math.min(100,p||0)); return "hsl("+Math.round(x*1.2)+" 92% 42%)"; }
 function ring(p,txt,sz){
   const s=sz||64, R=26, C=2*Math.PI*R, v=Math.max(0,Math.min(100,p||0)), len=v/100*C, col=colorPct(v);
   return `<svg viewBox="0 0 64 64" class="ring" style="width:${s}px;height:${s}px">
@@ -655,15 +659,16 @@ function gFiltered(){
 }
 function gCountTxt(n){return n===S.guests.length?`${n} registros`:`${n} de ${S.guests.length} registros`;}
 let GU=null;
+let LIST=localStorage.getItem("mngostat.list")==="1";
 function vFicha(g){
   const wa=(g.wa||"").replace(/[^0-9]/g,"");
   return `
   <button class="btn-gh btn-w btn-s" id="guBack" style="margin-bottom:12px">← Volver a la lista</button>
   <div class="card">
     <h2>${esc(g.full||g.name)}</h2>
-    <p class="sub">${folio(g.num)} · ${g.sex==="M"?"hombre":g.sex==="F"?"mujer":"sin clasificar"} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"}</p>
+    <p class="sub">${folio(g.num)} · ${g.sex==="M"?"hombre":g.sex==="F"?"mujer":"sin clasificar"} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"} · ${puntos(g)} punto${puntos(g)===1?"":"s"} de confianza</p>
     <div class="row">
-      <button class="${g.known?"btn-g":"btn-gh"}" data-gknown="${g.id}">${g.known?"✓ Lo conozco":"Lo conozco"}</button>
+      <button class="${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}">${loConozco(g)?"✓ Lo conozco":"🤙 Lo conozco"}</button>
       <button class="${g.flag?"btn-y":"btn-gh"}" data-gflag="${g.id}">${g.flag?"🚩 Con bandera":"🚩 Banderita"}</button>
     </div>
     <div class="row">
@@ -675,8 +680,10 @@ function vFicha(g){
   <div class="card">
     <h2>Datos</h2>
     <p class="sub">se guarda al tocar Guardar</p>
+    <label class="lb">Nombre en la lista</label>
+    <div class="row"><input id="guName" value="${esc(g.name)}"></div>
     <label class="lb">Nombre completo</label>
-    <div class="row"><input id="guFull" placeholder="Nombre y apellidos" value="${esc(g.full||g.name)}"></div>
+    <div class="row"><input id="guFull" placeholder="Nombre y apellidos" value="${esc(g.full||"")}"></div>
     <label class="lb">Instagram</label>
     <div class="row"><input id="guIg" placeholder="usuario, sin @" value="${esc(g.ig||"")}"></div>
     <label class="lb">WhatsApp</label>
@@ -694,7 +701,9 @@ function vFicha(g){
     <h2>Estado</h2>
     <ul class="lst">
       <li><div class="li-main"><div class="li-t">Folio</div></div><div class="li-n mono">${folio(g.num)}</div></li>
-      <li><div class="li-main"><div class="li-t">Lo conozco</div></div><span class="pill ${g.known?"p-ok":"p-n"}">${g.known?"sí":"no"}</span></li>
+      <li><div class="li-main"><div class="li-t">Lo conocen</div>
+        <div class="li-s">${puntos(g)?esc(quienesConocen(g).join(", ")):"nadie lo ha marcado"}</div></div>
+        <span class="pill ${puntos(g)?"p-ok":"p-n"}">${puntos(g)} pt${puntos(g)===1?"":"s"}</span></li>
       <li><div class="li-main"><div class="li-t">Banderita</div></div><span class="pill ${g.flag?"p-mid":"p-n"}">${g.flag?"sí":"no"}</span></li>
       <li><div class="li-main"><div class="li-t">Instagram</div></div><span class="pill ${g.ig?"p-vio":"p-n"}">${g.ig?"@"+esc(g.ig):"falta"}</span></li>
       <li><div class="li-main"><div class="li-t">WhatsApp</div></div><span class="pill ${g.wa?"p-vio":"p-n"}">${g.wa?esc(g.wa):"falta"}</span></li>
@@ -709,13 +718,15 @@ function vGente(){
   const st=stats();
   if(GU){ const g=S.guests.find(x=>x.id===GU); if(g) return vFicha(g); GU=null; }
   const dudas=S.guests.filter(g=>g.sex==="?");
-  const marcas=g=>[g.known?'<span class="mk ok">✓</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
+  const marcas=g=>[puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
                    g.ig?'<span class="mk ig">IG</span>':"", g.wa?'<span class="mk wa">WA</span>':"",
                    g.full?'<span class="mk nm">N</span>':""].join("");
   const list=g=>`<li data-n="${esc(norm(g.name))}" data-gopen="${g.id}">
       <span class="pill ${g.sex==="M"?"p-m":g.sex==="F"?"p-f":"p-q"}">${g.sex==="M"?"H":g.sex==="F"?"M":"?"}</span>
       <div class="li-main"><div class="li-t">${esc(g.name)} ${marcas(g)}</div>
-      <div class="li-s">${folio(g.num)} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"}${g.by?" · lo trae "+esc(g.by):""}</div></div>
+      <div class="li-s">${folio(g.num)} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"}${puntos(g)?" · "+puntos(g)+" pt":""}</div></div>
+      <button class="btn-s ${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}" title="Lo conozco">🤙</button>
+      <button class="btn-s ${g.flag?"btn-y":"btn-gh"}" data-gflag="${g.id}" title="Banderita">🚩</button>
       <button class="btn-s btn-gh" data-conf="${g.id}">${g.conf==="si"?"✓":g.conf==="tal"?"~":"✕"}</button>
       <button class="btn-x" data-del-g="${g.id}">✕</button>
     </li>`;
@@ -749,6 +760,22 @@ function vGente(){
     </li>`).join("")}</ul></div>`:""}
 
   <div class="card">
+    <h2>Confianza</h2>
+    <p class="sub">cuántos de la lista tiene marcado alguien del consejo</p>
+    ${(()=>{const con=S.guests.filter(g=>puntos(g)>0).length, sin=S.guests.length-con, tot=S.guests.length||1;
+      return `<div class="split">
+        <i style="width:${con/tot*100}%;background:var(--grn)">${con?con+" conocidos":""}</i>
+        <i style="width:${sin/tot*100}%;background:rgba(31,23,36,.16);color:#fff">${sin?sin+" sin marcar":""}</i>
+      </div>
+      <div class="tiny">${Math.round(con/tot*100)}% de la lista tiene al menos un aval. Varios avales suman puntos de confianza.</div>
+      ${S.guests.filter(g=>puntos(g)>1).length?`<hr class="sep"><div class="tiny" style="margin-bottom:8px">Más avalados</div>
+      <ul class="lst">${S.guests.filter(g=>puntos(g)>1).sort((a,b)=>puntos(b)-puntos(a)).slice(0,8).map(g=>`<li data-gopen="${g.id}">
+        <span class="pill p-ok">${puntos(g)} pts</span>
+        <div class="li-main"><div class="li-t">${esc(g.name)}</div>
+        <div class="li-s">${esc(quienesConocen(g).join(", "))}</div></div></li>`).join("")}</ul>`:""}`;})()}
+  </div>
+
+  <div class="card">
     <h2>Lista completa</h2>
     ${(()=>{const sel=(id,opts,v)=>`<select id="${id}">${opts.map(([k,l])=>`<option value="${k}"${k===v?" selected":""}>${l}</option>`).join("")}</select>`;
       const fl=gFiltered();
@@ -759,7 +786,8 @@ function vGente(){
       ${sel("gFConf",[["","Cualquier estado"],["si","Confirmados"],["tal","Tal vez"],["no","No vienen"]],GF.conf)}
     </div>
     <div class="row">${sel("gSort",[["az","A → Z"],["za","Z → A"],["sexF","Sexo (mujeres primero)"],["sexM","Sexo (hombres primero)"],["conf","Confirmación"],["new","Más recientes"],["old","Más antiguos"]],GF.sort)}</div>
-    ${S.guests.length?`<ul class="lst" id="gList">${fl.map(list).join("")}</ul>`:`<div class="empty">Nadie en la lista todavía</div>`}`;})()}
+    <button class="btn-gh btn-w btn-s" id="gToggle" style="margin-bottom:10px">${LIST?"Ocultar la lista":"Mostrar la lista ("+fl.length+")"}</button>
+    ${!LIST?"":(S.guests.length?`<ul class="lst" id="gList">${fl.map(list).join("")}</ul>`:`<div class="empty">Nadie en la lista todavía</div>`)}`;})()}
   </div>
 
   <div class="card">
@@ -1389,16 +1417,27 @@ document.addEventListener("click",e=>{
     c6.debt=(+c6.debt||0)+ex; c6.budget=(+c6.budget||0)+ex;
     save("crew","registró "+money(ex)+" de deuda con "+c6.name,c6.id); toast("Deuda registrada"); return;}
 
+  /* lista colapsable */
+  if(id==="gToggle"){LIST=!LIST;localStorage.setItem("mngostat.list",LIST?"1":"0");render();return;}
+
   /* ficha de asistente */
   if(id==="guBack"){GU=null;render();return;}
-  if(a("data-gknown")){const g2=S.guests.find(x=>x.id===a("data-gknown"));g2.known=!g2.known;
-    save("guests",(g2.known?"marcó que conoce a ":"ya no marca como conocido a ")+g2.name,g2.id);return;}
+  if(a("data-gknown")){const g2=S.guests.find(x=>x.id===a("data-gknown")); if(!g2) return;
+    if(!ME) return toast("Entra con tu ID primero");
+    const lst=knownBy(g2).slice(), k=lst.indexOf(ME);
+    if(k>=0) lst.splice(k,1); else lst.push(ME);
+    g2.knownBy=lst; g2.known=lst.length>0;
+    save("guests",(k>=0?"ya no marca como conocido a ":"marcó que conoce a ")+g2.name,g2.id);return;}
   if(a("data-gflag")){const g3=S.guests.find(x=>x.id===a("data-gflag"));g3.flag=!g3.flag;
     save("guests",(g3.flag?"puso banderita a ":"quitó la banderita de ")+g3.name,g3.id);return;}
   if(a("data-gsave")){const g4=S.guests.find(x=>x.id===a("data-gsave"));
+    const antes=g4.name;
+    const nn=$("#guName").value.trim(); if(nn) g4.name=nn;
     g4.full=$("#guFull").value.trim(); g4.ig=$("#guIg").value.trim().replace(/^@/,"");
     g4.wa=$("#guWa").value.trim(); g4.note=$("#guNote").value.trim();
-    save("guests","completó los datos de "+(g4.full||g4.name),g4.id); toast("Guardado"); return;}
+    GU=null;
+    save("guests", antes!==g4.name ? ("renombró a "+antes+" como "+g4.name) : ("completó los datos de "+(g4.full||g4.name)), g4.id);
+    toast("Guardado"); return;}
 
   /* gente */
   if(id==="gAdd"){const n=$("#gName").value.trim(); if(!n)return;
