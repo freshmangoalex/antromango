@@ -120,6 +120,12 @@ ul.lst li{display:flex;align-items:center;gap:10px;background:var(--bg2);border:
 .p-bad{background:rgba(255,45,32,.14);color:#E01A0C}
 .p-n{background:rgba(31,23,36,.06);color:var(--tx2)}
 .p-vio{background:rgba(139,92,246,.16);color:#6D28D9}
+.p-vip{background:linear-gradient(135deg,rgba(255,200,0,.3),rgba(255,122,0,.3));color:#9A5B00}
+.btn-vip{background:linear-gradient(135deg,#FFC800,#FF7A00);color:#3A2406;font-weight:800}
+.btn-pvip{background:linear-gradient(135deg,#8B5CF6,#FF3D8F);color:#fff;font-weight:800}
+.btn-dng{background:#FF2D20;color:#fff;font-weight:800}
+.p-pvip{background:rgba(139,92,246,.18);color:#6D28D9}
+.v.vip{color:#E08A00}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
 .chip{border-radius:999px;padding:8px 14px;font-size:13px;font-weight:800;background:var(--card);border:1.5px solid var(--line);color:var(--tx2);cursor:pointer}
 .chip.on{background:linear-gradient(135deg,var(--red),var(--org));color:#fff;border-color:transparent}
@@ -154,7 +160,11 @@ nav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,25
 .invrow{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid rgba(31,23,36,.07);border-radius:var(--r2);padding:11px 12px;margin-bottom:8px}
 .invrow .im{flex:1 1 auto;min-width:0}
 .mk{display:inline-block;font-size:9.5px;font-weight:800;border-radius:5px;padding:1px 4px;margin-left:3px;vertical-align:1px}
-.mk.ok{background:rgba(21,128,61,.14);color:#15803D}
+.mk.ok{background:rgba(0,176,80,.18);color:#00913F}
+.mk.vip{background:linear-gradient(135deg,#FFC800,#FF7A00);color:#3A2406;letter-spacing:.3px}
+.mk.pvip{background:linear-gradient(135deg,#8B5CF6,#FF3D8F);color:#fff}
+.mk.dng{background:#FF2D20;color:#fff;letter-spacing:.5px}
+.mk.noc{background:rgba(31,23,36,.1);color:var(--tx3)}
 .mk.fl{background:rgba(255,195,25,.2)}
 .mk.ig{background:rgba(219,39,119,.12);color:#BE185D}
 .mk.wa{background:rgba(13,148,136,.13);color:#0B7268}
@@ -655,10 +665,12 @@ function gFiltered(){
     sexM:(a,b)=>(((a.sex==="M"?0:a.sex==="F"?1:2))-((b.sex==="M"?0:b.sex==="F"?1:2)))||az(a,b),
     conf:(a,b)=>((co[a.conf]??3)-(co[b.conf]??3))||az(a,b),
     new:(a,b)=>(b.ts||0)-(a.ts||0)||az(a,b), old:(a,b)=>(a.ts||0)-(b.ts||0)||az(a,b)}[GF.sort]||az;
-  return S.guests.filter(g=>(!GF.sex||g.sex===GF.sex)&&(!GF.conf||g.conf===GF.conf)&&(!q||norm(g.name).includes(q))).sort(cmp);
+  const EX={vip:g=>!!g.vip, pvip:g=>!!g.pvip, flag:g=>!!g.flag, danger:g=>!!g.danger, nocon:g=>!!g.nocon, known:g=>puntos(g)>0};
+  const okSex=g=> !GF.sex ? true : (EX[GF.sex] ? EX[GF.sex](g) : g.sex===GF.sex);
+  return S.guests.filter(g=>okSex(g)&&(!GF.conf||g.conf===GF.conf)&&(!q||norm(g.name).includes(q))).sort(cmp);
 }
 function gCountTxt(n){return n===S.guests.length?`${n} registros`:`${n} de ${S.guests.length} registros`;}
-let GU=null;
+let GU=null, GSCROLL=0;
 let LIST=localStorage.getItem("mngostat.list")==="1";
 function vFicha(g){
   const wa=(g.wa||"").replace(/[^0-9]/g,"");
@@ -670,6 +682,14 @@ function vFicha(g){
     <div class="row">
       <button class="${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}">${loConozco(g)?"✓ Lo conozco":"🤙 Lo conozco"}</button>
       <button class="${g.flag?"btn-y":"btn-gh"}" data-gflag="${g.id}">${g.flag?"🚩 Con bandera":"🚩 Banderita"}</button>
+    </div>
+    <div class="row">
+      <button class="${g.vip?"btn-vip":"btn-gh"}" data-gvip="${g.id}">${g.vip?"★ Es VIP":"☆ Marcar VIP"}</button>
+      <button class="${g.pvip?"btn-pvip":"btn-gh"}" data-gpvip="${g.id}">${g.pvip?"♛ VIP del consejo":"♛ VIP del consejo"}</button>
+    </div>
+    <div class="row">
+      <button class="${g.danger?"btn-dng":"btn-gh"}" data-gdanger="${g.id}">${g.danger?"!! Marcado como violento":"!! Es violento"}</button>
+      <button class="${g.nocon?"btn-y":"btn-gh"}" data-gnocon="${g.id}">${g.nocon?"✖ No lo conocemos":"✖ No lo conocemos"}</button>
     </div>
     <div class="row">
       <button class="btn-gh" data-sex="${g.id}">⇄ Cambiar sexo</button>
@@ -704,6 +724,10 @@ function vFicha(g){
       <li><div class="li-main"><div class="li-t">Lo conocen</div>
         <div class="li-s">${puntos(g)?esc(quienesConocen(g).join(", ")):"nadie lo ha marcado"}</div></div>
         <span class="pill ${puntos(g)?"p-ok":"p-n"}">${puntos(g)} pt${puntos(g)===1?"":"s"}</span></li>
+      <li><div class="li-main"><div class="li-t">VIP</div></div><span class="pill ${g.vip?"p-vip":"p-n"}">${g.vip?"sí":"no"}</span></li>
+      <li><div class="li-main"><div class="li-t">VIP del consejo</div></div><span class="pill ${g.pvip?"p-pvip":"p-n"}">${g.pvip?"sí":"no"}</span></li>
+      <li><div class="li-main"><div class="li-t">Riesgo</div><div class="li-s">${g.danger?"marcado como violento":"sin señalamientos"}</div></div><span class="pill ${g.danger?"p-bad":"p-n"}">${g.danger?"!!":"ok"}</span></li>
+      <li><div class="li-main"><div class="li-t">No lo conocemos</div><div class="li-s">${g.nocon?"se revisó y nadie lo ubica":"sin revisar"}</div></div><span class="pill ${g.nocon?"p-mid":"p-n"}">${g.nocon?"sí":"—"}</span></li>
       <li><div class="li-main"><div class="li-t">Banderita</div></div><span class="pill ${g.flag?"p-mid":"p-n"}">${g.flag?"sí":"no"}</span></li>
       <li><div class="li-main"><div class="li-t">Instagram</div></div><span class="pill ${g.ig?"p-vio":"p-n"}">${g.ig?"@"+esc(g.ig):"falta"}</span></li>
       <li><div class="li-main"><div class="li-t">WhatsApp</div></div><span class="pill ${g.wa?"p-vio":"p-n"}">${g.wa?esc(g.wa):"falta"}</span></li>
@@ -718,7 +742,7 @@ function vGente(){
   const st=stats();
   if(GU){ const g=S.guests.find(x=>x.id===GU); if(g) return vFicha(g); GU=null; }
   const dudas=S.guests.filter(g=>g.sex==="?");
-  const marcas=g=>[puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
+  const marcas=g=>[g.danger?'<span class="mk dng">!!</span>':"", g.pvip?'<span class="mk pvip">♛</span>':"", g.vip?'<span class="mk vip">VIP</span>':"", g.nocon?'<span class="mk noc">?</span>':"", puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
                    g.ig?'<span class="mk ig">IG</span>':"", g.wa?'<span class="mk wa">WA</span>':"",
                    g.full?'<span class="mk nm">N</span>':""].join("");
   const list=g=>`<li data-n="${esc(norm(g.name))}" data-gopen="${g.id}">
@@ -726,7 +750,9 @@ function vGente(){
       <div class="li-main"><div class="li-t">${esc(g.name)} ${marcas(g)}</div>
       <div class="li-s">${folio(g.num)} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"}${puntos(g)?" · "+puntos(g)+" pt":""}</div></div>
       <button class="btn-s ${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}" title="Lo conozco">🤙</button>
+      <button class="btn-s ${g.vip?"btn-vip":"btn-gh"}" data-gvip="${g.id}" title="VIP">★</button>
       <button class="btn-s ${g.flag?"btn-y":"btn-gh"}" data-gflag="${g.id}" title="Banderita">🚩</button>
+      <button class="btn-s ${g.danger?"btn-dng":"btn-gh"}" data-gdanger="${g.id}" title="Persona violenta">!!</button>
       <button class="btn-s btn-gh" data-conf="${g.id}">${g.conf==="si"?"✓":g.conf==="tal"?"~":"✕"}</button>
       <button class="btn-x" data-del-g="${g.id}">✕</button>
     </li>`;
@@ -742,7 +768,12 @@ function vGente(){
   <div class="grid g3">
     <div class="stat"><div class="k">Capturados</div><div class="v vio">${S.guests.filter(g=>g.full||g.ig||g.wa).length}</div><div class="u">con algún dato</div></div>
     <div class="stat"><div class="k">Conocidos</div><div class="v grn">${S.guests.filter(g=>g.known).length}</div><div class="u">de ${S.guests.length}</div></div>
+    <div class="stat"><div class="k">VIP</div><div class="v vip">${S.guests.filter(g=>g.vip).length}</div><div class="u">+${S.guests.filter(g=>g.pvip).length} del consejo</div></div>
+  </div>
+  <div class="grid g3" style="margin-top:10px">
     <div class="stat"><div class="k">Banderas</div><div class="v yel">${S.guests.filter(g=>g.flag).length}</div><div class="u">marcados</div></div>
+    <div class="stat"><div class="k">Conocidos</div><div class="v grn">${S.guests.filter(g=>puntos(g)>0).length}</div><div class="u">con aval</div></div>
+    <div class="stat"><div class="k">Riesgo</div><div class="v red">${S.guests.filter(g=>g.danger).length}</div><div class="u">señalados</div></div>
   </div>
   <div class="grid g3" style="margin-top:10px">
     <div class="stat"><div class="k">Total</div><div class="v">${st.people}</div><div class="u">ponderado</div></div>
@@ -782,7 +813,7 @@ function vGente(){
       return `<p class="sub" id="gCount">${gCountTxt(fl.length)}</p>
     <div class="row"><input id="gQ" type="search" placeholder="Buscar por nombre" autocomplete="off" value="${esc(GF.q)}"></div>
     <div class="row">
-      ${sel("gFSex",[["","Todos"],["M","Hombres"],["F","Mujeres"],["?","Sin clasificar"]],GF.sex)}
+      ${sel("gFSex",[["","Todos"],["M","Hombres"],["F","Mujeres"],["?","Sin clasificar"],["vip","Solo VIP"],["pvip","VIP del consejo"],["flag","Con banderita"],["danger","Señalados !!"],["nocon","No conocemos"],["known","Con aval"]],GF.sex)}
       ${sel("gFConf",[["","Cualquier estado"],["si","Confirmados"],["tal","Tal vez"],["no","No vienen"]],GF.conf)}
     </div>
     <div class="row">${sel("gSort",[["az","A → Z"],["za","Z → A"],["sexF","Sexo (mujeres primero)"],["sexM","Sexo (hombres primero)"],["conf","Confirmación"],["new","Más recientes"],["old","Más antiguos"]],GF.sort)}</div>
@@ -1337,7 +1368,7 @@ document.addEventListener("click",e=>{
   const cu=e.target.closest("[data-cuopen]");
   if(cu && !e.target.closest("button")){ CU=cu.getAttribute("data-cuopen"); render(); return; }
   const gu=e.target.closest("[data-gopen]");
-  if(gu && !e.target.closest("button") && !e.target.closest("a")){ GU=gu.getAttribute("data-gopen"); render(); return; }
+  if(gu && !e.target.closest("button") && !e.target.closest("a")){ GSCROLL=window.scrollY||0; GU=gu.getAttribute("data-gopen"); render(); window.scrollTo(0,0); return; }
   const th=e.target.closest("[data-thopen]");
   if(th && !e.target.closest("[data-del-th]")){ TH=th.getAttribute("data-thopen"); render(); return; }
   const gb=e.target.closest("[data-me]");
@@ -1420,8 +1451,17 @@ document.addEventListener("click",e=>{
   /* lista colapsable */
   if(id==="gToggle"){LIST=!LIST;localStorage.setItem("mngostat.list",LIST?"1":"0");render();return;}
 
+  if(a("data-gdanger")){const gd=S.guests.find(x=>x.id===a("data-gdanger")); if(!gd) return;
+    gd.danger=!gd.danger; save("guests",(gd.danger?"⚠️ marcó como violento a ":"quitó el señalamiento de violencia a ")+gd.name,gd.id); return;}
+  if(a("data-gpvip")){const gp=S.guests.find(x=>x.id===a("data-gpvip")); if(!gp) return;
+    gp.pvip=!gp.pvip; save("guests",(gp.pvip?"marcó como VIP del consejo a ":"quitó el VIP del consejo a ")+gp.name,gp.id); return;}
+  if(a("data-gnocon")){const gx=S.guests.find(x=>x.id===a("data-gnocon")); if(!gx) return;
+    gx.nocon=!gx.nocon; save("guests",(gx.nocon?"marcó que no conocemos a ":"quitó el “no lo conocemos” de ")+gx.name,gx.id); return;}
+  if(a("data-gvip")){const gv=S.guests.find(x=>x.id===a("data-gvip")); if(!gv) return;
+    gv.vip=!gv.vip; save("guests",(gv.vip?"marcó como VIP a ":"quitó el VIP a ")+gv.name,gv.id); return;}
+
   /* ficha de asistente */
-  if(id==="guBack"){GU=null;render();return;}
+  if(id==="guBack"){GU=null;LIST=true;localStorage.setItem("mngostat.list","1");render();volverScroll();return;}
   if(a("data-gknown")){const g2=S.guests.find(x=>x.id===a("data-gknown")); if(!g2) return;
     if(!ME) return toast("Entra con tu ID primero");
     const lst=knownBy(g2).slice(), k=lst.indexOf(ME);
@@ -1431,6 +1471,7 @@ document.addEventListener("click",e=>{
   if(a("data-gflag")){const g3=S.guests.find(x=>x.id===a("data-gflag"));g3.flag=!g3.flag;
     save("guests",(g3.flag?"puso banderita a ":"quitó la banderita de ")+g3.name,g3.id);return;}
   if(a("data-gsave")){const g4=S.guests.find(x=>x.id===a("data-gsave"));
+    LIST=true; localStorage.setItem("mngostat.list","1"); setTimeout(volverScroll,0);
     const antes=g4.name;
     const nn=$("#guName").value.trim(); if(nn) g4.name=nn;
     g4.full=$("#guFull").value.trim(); g4.ig=$("#guIg").value.trim().replace(/^@/,"");
@@ -1535,6 +1576,7 @@ document.addEventListener("change",e=>{
 
 /* ---------- pantalla de entrada por ID ---------- */
 let gateOpen=false;
+function volverScroll(){ const y=GSCROLL||0; requestAnimationFrame(()=>window.scrollTo(0,y)); }
 function openGate(){ gateOpen=true; renderGate(); }
 function renderGate(){
   const el=$("#gate"); if(!el) return;
