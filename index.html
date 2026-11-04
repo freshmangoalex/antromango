@@ -124,6 +124,8 @@ ul.lst li{display:flex;align-items:center;gap:10px;background:var(--bg2);border:
 .btn-vip{background:linear-gradient(135deg,#FFC800,#FF7A00);color:#3A2406;font-weight:800}
 .btn-pvip{background:linear-gradient(135deg,#8B5CF6,#FF3D8F);color:#fff;font-weight:800}
 .btn-dng{background:#FF2D20;color:#fff;font-weight:800}
+.btn-weed{background:linear-gradient(135deg,#00B050,#A6E022);color:#13330E;font-weight:800}
+.p-weed{background:rgba(0,176,80,.16);color:#00913F}
 .p-pvip{background:rgba(139,92,246,.18);color:#6D28D9}
 .v.vip{color:#E08A00}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 12px}
@@ -168,6 +170,7 @@ nav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,25
 .nick{font-weight:700;color:var(--vio);font-size:13.5px}
 .mk.r{background:rgba(0,176,80,.14);color:#00913F}
 .mk.d{background:rgba(255,122,0,.16);color:#C55A00}
+.mk.wd{background:rgba(0,176,80,.16)}
 .mk.fl{background:rgba(255,195,25,.2)}
 .mk.ig{background:rgba(219,39,119,.12);color:#BE185D}
 .mk.wa{background:rgba(13,148,136,.13);color:#0B7268}
@@ -673,7 +676,7 @@ function gFiltered(){
     pts:(a,b)=>puntos(b)-puntos(a)||az(a,b),
     resp:(a,b)=>((+b.resp||0)-(+a.resp||0))||az(a,b),
     deps:(a,b)=>((+b.deps||0)-(+a.deps||0))||az(a,b)}[GF.sort]||az;
-  const EX={vip:g=>!!g.vip, pvip:g=>!!g.pvip, flag:g=>!!g.flag, danger:g=>!!g.danger, nocon:g=>!!g.nocon, known:g=>puntos(g)>0};
+  const EX={vip:g=>!!g.vip, pvip:g=>!!g.pvip, flag:g=>!!g.flag, danger:g=>!!g.danger, smoke:g=>!!g.smoke, nocon:g=>!!g.nocon, known:g=>puntos(g)>0};
   const okSex=g=> !GF.sex ? true : (EX[GF.sex] ? EX[GF.sex](g) : g.sex===GF.sex);
   return S.guests.filter(g=>okSex(g)&&(!GF.conf||g.conf===GF.conf)&&(!q||norm(g.name).includes(q)||norm(g.nick||"").includes(q)||norm(g.full||"").includes(q))).sort(cmp);
 }
@@ -698,6 +701,9 @@ function vFicha(g){
     <div class="row">
       <button class="${g.danger?"btn-dng":"btn-gh"}" data-gdanger="${g.id}">${g.danger?"!! Marcado como violento":"!! Es violento"}</button>
       <button class="${g.nocon?"btn-y":"btn-gh"}" data-gnocon="${g.id}">${g.nocon?"✖ No lo conocemos":"✖ No lo conocemos"}</button>
+    </div>
+    <div class="row">
+      <button class="${g.smoke?"btn-weed":"btn-gh"}" data-gsmoke="${g.id}">${g.smoke?"🌿 Sí fuma":"🌿 Fuma mota"}</button>
     </div>
     <div class="row">
       <button class="btn-gh" data-sex="${g.id}">⇄ Cambiar sexo</button>
@@ -768,6 +774,7 @@ function vFicha(g){
         <span class="pill ${puntos(g)?"p-ok":"p-n"}">${puntos(g)} pt${puntos(g)===1?"":"s"}</span></li>
       <li><div class="li-main"><div class="li-t">VIP</div></div><span class="pill ${g.vip?"p-vip":"p-n"}">${g.vip?"sí":"no"}</span></li>
       <li><div class="li-main"><div class="li-t">VIP del consejo</div></div><span class="pill ${g.pvip?"p-pvip":"p-n"}">${g.pvip?"sí":"no"}</span></li>
+      <li><div class="li-main"><div class="li-t">Fuma mota</div></div><span class="pill ${g.smoke?"p-weed":"p-n"}">${g.smoke?"sí":"no"}</span></li>
       <li><div class="li-main"><div class="li-t">Riesgo</div><div class="li-s">${g.danger?"marcado como violento":"sin señalamientos"}</div></div><span class="pill ${g.danger?"p-bad":"p-n"}">${g.danger?"!!":"ok"}</span></li>
       <li><div class="li-main"><div class="li-t">No lo conocemos</div><div class="li-s">${g.nocon?"se revisó y nadie lo ubica":"sin revisar"}</div></div><span class="pill ${g.nocon?"p-mid":"p-n"}">${g.nocon?"sí":"—"}</span></li>
       <li><div class="li-main"><div class="li-t">Banderita</div></div><span class="pill ${g.flag?"p-mid":"p-n"}">${g.flag?"sí":"no"}</span></li>
@@ -787,7 +794,7 @@ function vGente(){
   const st=stats();
   if(GU){ const g=S.guests.find(x=>x.id===GU); if(g) return vFicha(g); GU=null; }
   const dudas=S.guests.filter(g=>g.sex==="?");
-  const marcas=g=>[g.danger?'<span class="mk dng">!!</span>':"", (+g.resp)?'<span class="mk r">R'+g.resp+'</span>':"", (+g.deps)?'<span class="mk d">+'+g.deps+'</span>':"", g.pvip?'<span class="mk pvip">♛</span>':"", g.vip?'<span class="mk vip">VIP</span>':"", g.nocon?'<span class="mk noc">?</span>':"", puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
+  const marcas=g=>[g.danger?'<span class="mk dng">!!</span>':"", g.smoke?'<span class="mk wd">🌿</span>':"", (+g.resp)?'<span class="mk r">R'+g.resp+'</span>':"", (+g.deps)?'<span class="mk d">+'+g.deps+'</span>':"", g.pvip?'<span class="mk pvip">♛</span>':"", g.vip?'<span class="mk vip">VIP</span>':"", g.nocon?'<span class="mk noc">?</span>':"", puntos(g)?'<span class="mk ok">'+puntos(g)+'</span>':"", g.flag?'<span class="mk fl">🚩</span>':"",
                    g.ig?'<span class="mk ig">IG</span>':"", g.wa?'<span class="mk wa">WA</span>':"",
                    g.full?'<span class="mk nm">N</span>':""].join("");
   const list=g=>`<li data-n="${esc(norm(g.name))}" data-gopen="${g.id}">
@@ -798,6 +805,7 @@ function vGente(){
       <button class="btn-s ${g.vip?"btn-vip":"btn-gh"}" data-gvip="${g.id}" title="VIP">★</button>
       <button class="btn-s ${g.flag?"btn-y":"btn-gh"}" data-gflag="${g.id}" title="Banderita">🚩</button>
       <button class="btn-s ${g.danger?"btn-dng":"btn-gh"}" data-gdanger="${g.id}" title="Persona violenta">!!</button>
+      <button class="btn-s ${g.smoke?"btn-weed":"btn-gh"}" data-gsmoke="${g.id}" title="Fuma mota">🌿</button>
       <button class="btn-s btn-gh" data-conf="${g.id}">${g.conf==="si"?"✓":g.conf==="tal"?"~":"✕"}</button>
       <button class="btn-x" data-del-g="${g.id}">✕</button>
     </li>`;
@@ -818,7 +826,7 @@ function vGente(){
   <div class="grid g3" style="margin-top:10px">
     <div class="stat"><div class="k">Banderas</div><div class="v yel">${S.guests.filter(g=>g.flag).length}</div><div class="u">marcados</div></div>
     <div class="stat"><div class="k">Conocidos</div><div class="v grn">${S.guests.filter(g=>puntos(g)>0).length}</div><div class="u">con aval</div></div>
-    <div class="stat"><div class="k">Riesgo</div><div class="v red">${S.guests.filter(g=>g.danger).length}</div><div class="u">señalados</div></div>
+    <div class="stat"><div class="k">Riesgo</div><div class="v red">${S.guests.filter(g=>g.danger).length}</div><div class="u">${S.guests.filter(g=>g.smoke).length} fuman</div></div>
   </div>
   <div class="grid g3" style="margin-top:10px">
     <div class="stat"><div class="k">Total</div><div class="v">${st.people}</div><div class="u">ponderado</div></div>
@@ -858,7 +866,7 @@ function vGente(){
       return `<p class="sub" id="gCount">${gCountTxt(fl.length)}</p>
     <div class="row"><input id="gQ" type="search" placeholder="Buscar por nombre" autocomplete="off" value="${esc(GF.q)}"></div>
     <div class="row">
-      ${sel("gFSex",[["","Todos"],["M","Hombres"],["F","Mujeres"],["?","Sin clasificar"],["vip","Solo VIP"],["pvip","VIP del consejo"],["flag","Con banderita"],["danger","Señalados !!"],["nocon","No conocemos"],["known","Con aval"]],GF.sex)}
+      ${sel("gFSex",[["","Todos"],["M","Hombres"],["F","Mujeres"],["?","Sin clasificar"],["vip","Solo VIP"],["pvip","VIP del consejo"],["flag","Con banderita"],["danger","Señalados !!"],["smoke","Fuman mota"],["nocon","No conocemos"],["known","Con aval"]],GF.sex)}
       ${sel("gFConf",[["","Cualquier estado"],["si","Confirmados"],["tal","Tal vez"],["no","No vienen"]],GF.conf)}
     </div>
     <div class="row">${sel("gSort",[["az","A → Z"],["za","Z → A"],["sexF","Sexo (mujeres primero)"],["sexM","Sexo (hombres primero)"],["conf","Confirmación"],["pts","Más avalados"],["resp","Responsabilidad"],["deps","Dependientes"],["new","Más recientes"],["old","Más antiguos"]],GF.sort)}</div>
@@ -1512,6 +1520,8 @@ document.addEventListener("click",e=>{
     if(!gc) return; const dec=decodeURIComponent(av);
     gc.knownBy=knownBy(gc).filter(x=>x!==dec); gc.known=gc.knownBy.length>0;
     save("guests","quitó a "+nombreAval(dec)+" de los que conocen a "+gc.name,gc.id); return;}
+  if(a("data-gsmoke")){const gs=S.guests.find(x=>x.id===a("data-gsmoke")); if(!gs) return;
+    gs.smoke=!gs.smoke; save("guests",(gs.smoke?"anotó que fuma mota: ":"quitó la marca de mota a ")+gs.name,gs.id); return;}
   if(a("data-gdanger")){const gd=S.guests.find(x=>x.id===a("data-gdanger")); if(!gd) return;
     gd.danger=!gd.danger; save("guests",(gd.danger?"⚠️ marcó como violento a ":"quitó el señalamiento de violencia a ")+gd.name,gd.id); return;}
   if(a("data-gpvip")){const gp=S.guests.find(x=>x.id===a("data-gpvip")); if(!gp) return;
