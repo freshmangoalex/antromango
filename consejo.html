@@ -149,13 +149,13 @@ ul.lst li{display:flex;align-items:center;gap:10px;background:var(--bg2);border:
 nav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,255,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 .navs{display:flex;overflow-x:auto;scrollbar-width:none;gap:2px;padding:7px 8px}
 .navs::-webkit-scrollbar{display:none}
-.navs button{flex:0 0 auto;background:transparent;padding:7px 11px;border-radius:14px;color:var(--tx3);display:flex;flex-direction:column;align-items:center;gap:3px;min-width:60px}
+.navs button{position:relative;flex:0 0 auto;background:transparent;padding:7px 11px;border-radius:14px;color:var(--tx3);display:flex;flex-direction:column;align-items:center;gap:3px;min-width:60px}
 .navs button .ic{font-size:19px;line-height:1}
 .navs button .lb2{font-size:10px;font-weight:800;letter-spacing:.2px}
 .navs button.on{background:var(--card2);color:var(--tx)}
 .navs button.on .lb2{color:var(--tx)}
 .navs button.on .ic{filter:saturate(1.4)}
-.badge{position:absolute;transform:translate(16px,-6px);background:var(--red);color:#fff;font-size:9.5px;font-weight:800;border-radius:999px;padding:1px 5px}
+.badge{position:absolute;top:2px;right:4px;background:var(--red);color:#fff;font-size:9.5px;font-weight:800;border-radius:999px;padding:1px 5px}
 
 .hide{display:none!important}
 .ring{flex:0 0 auto;display:block}
@@ -1791,10 +1791,11 @@ setInterval(flush,15000);
    los invitados se lee aquí en vivo. No toca la rama del consejo.
    ============================================================ */
 const ROOMP="antromango4_pub";
-let PUB={roster:{},needs:{},live:{},rules:""}, PUBon=false, PUBDET={}, PUBSEL=null;
+let PUB={roster:{},needs:{},live:{},reglas:""}, PUBon=false, PUBDET={}, PUBSEL=null;
 let PUQ="", SUPQ="", SUPSEL=null, REGQ="";
 let SCAN={on:false,stream:null,raf:0,last:"",lastTs:0,msg:null};
 let PUBSIG="", pubTimer=0;
+let PUBERR="", PUBERRTS=0, PUBAUTO=true;
 
 function pubInit(d){
   try{
@@ -1803,14 +1804,30 @@ function pubInit(d){
     d.onValue(d.ref(db,ROOMP+"/roster"),s=>{ PUB.roster=s.val()||{};
       if(TAB==="puerta"||TAB==="registro") render(); });
     d.onValue(d.ref(db,ROOMP+"/needs"), s=>{ PUB.needs =s.val()||{}; });
-    d.onValue(d.ref(db,ROOMP+"/rules"), s=>{ PUB.rules =s.val()||""; });
+    d.onValue(d.ref(db,ROOMP+"/reglas"),s=>{ PUB.reglas=s.val()||""; });
     PUBon=true;
   }catch(e){ PUBon=false; }
 }
-async function pubWrite(up){
-  if(!PUBon||!db){ toast("Sin conexión con la base"); return false; }
-  try{ await fns.update(fns.ref(db,ROOMP),up); return true; }
-  catch(e){ toast("No se pudo escribir en el registro"); return false; }
+async function pubWrite(up,callado){
+  if(!PUBon||!db){ if(!callado) avisoErr("Sin conexión con la base"); return false; }
+  try{
+    await fns.update(fns.ref(db,ROOMP),up);
+    if(PUBERR){ PUBERR=""; render(); }
+    return true;
+  }catch(e){
+    const m=String((e&&(e.message||e.code))||e);
+    avisoErr(/permission|denied/i.test(m)
+      ? "Firebase rechazó la escritura. Faltan las reglas de antromango4_pub en la consola."
+      : "No se pudo escribir: "+m.slice(0,110));
+    PUBAUTO=false;     /* se corta el reintento solo hasta que lo pidas a mano */
+    return false;
+  }
+}
+/* el mismo aviso no se repite más de una vez cada quince segundos */
+function avisoErr(t){
+  PUBERR=t;
+  const n=Date.now();
+  if(n-PUBERRTS>15000){ PUBERRTS=n; toast(t); }
 }
 
 /* ---------- lo que se publica a los invitados ---------- */
@@ -1849,16 +1866,17 @@ function pubPendiente(){
     else if(b.name!==a.name||b.nick!==a.nick||+b.num!==+a.num||(b.vip?1:0)!==a.vip||(b.pvip?1:0)!==a.pvip) cambiados++;
   });
   const sobran=Object.keys(pub).filter(k=>!r[k]).length;
-  const reglas=pubReglas()!==String(PUB.rules||"");
+  const reglas=pubReglas()!==String(PUB.reglas||"");
   const insumos=JSON.stringify(pubNeeds())!==JSON.stringify(PUB.needs||{});
   return {nuevos,cambiados,sobran,reglas,insumos,
           total:nuevos+cambiados+sobran+(reglas?1:0)+(insumos?1:0)};
 }
 async function pubPublicar(silencio){
   const r=pubRoster(), n=pubNeeds(), g=pubReglas();
-  const ok=await pubWrite({roster:r,needs:n,rules:g});
-  if(!ok) return false;
-  PUB.roster=r; PUB.needs=n; PUB.rules=g; PUBSIG=pubFirma();
+  const ok=await pubWrite({roster:r,needs:n,reglas:g},silencio);
+  if(!ok){ if(silencio){ PUBAUTO=false; render(); } return false; }
+  PUBAUTO=true;
+  PUB.roster=r; PUB.needs=n; PUB.reglas=g; PUBSIG=pubFirma();
   if(!silencio){
     save("supplies","publicó al registro "+Object.keys(r).length+" invitados y "+Object.keys(n).length+" insumos",[]);
     toast("Publicado · "+Object.keys(r).length+" invitados");
@@ -1869,6 +1887,7 @@ async function pubPublicar(silencio){
 /* la lista se mantiene al día sola: si el administrador cambia algo
    publicable, se vuelve a mandar unos segundos después */
 function pubAuto(){
+  if(!PUBAUTO) return;          /* si una publicación falló, no se reintenta sola */
   if(!PUBon||!online||!isAdmin()) return;
   if(!Object.keys(PUB.roster||{}).length) return;   /* la primera vez se publica a mano */
   const f=pubFirma();
@@ -1927,6 +1946,22 @@ async function pubBorrarEntradas(){
   ids.forEach(g=>{ if(PUB.live[g]) delete PUB.live[g].entry; });
   save("supplies","borró las "+ids.length+" entradas de la puerta",[]);
   toast("Entradas en cero"); render();
+}
+
+/* borra los pases de todos: la rama se limpia renglón por renglón,
+   porque las reglas solo permiten escribir dentro de cada uno */
+async function pubBorrarTodo(){
+  const ids=Object.keys(PUB.live||{});
+  if(!ids.length){ toast("No hay pases que borrar"); return; }
+  if(!confirm("Borrar los "+ids.length+" pases y sus registros. Toda esa gente tiene que volver a sacar su boleto y elegir NIP otra vez.")) return;
+  if(!confirm("Seguro. Esto no se puede deshacer.")) return;
+  const up={};
+  ids.forEach(g=>{ up["live/"+g]=null; up["reg/"+g]=null; });
+  const ok=await pubWrite(up);
+  if(!ok) return;
+  PUB.live={}; PUBDET={}; PUBSEL=null;
+  save("supplies","borró los "+ids.length+" pases del registro",[]);
+  toast("Registro vacío"); render();
 }
 
 /* ---------- detalle reservado y soporte ---------- */
@@ -2084,6 +2119,14 @@ function vPuerta(){
   });
 
   return `
+  ${PUBERR?`<div class="card" style="border:2px solid var(--bad)">
+    <h2>El registro no acepta escrituras</h2>
+    <p class="sub">${esc(PUBERR)}</p>
+    <p class="sub">Mientras esto no se arregle, ni las entradas ni la lista se guardan.
+      En la consola de Firebase, Realtime Database, pestaña Reglas, pega el contenido de
+      reglas-firebase.json y publica. El reintento automático quedó apagado.</p>
+    <button class="btn-p btn-w" id="puReintenta">Volver a intentar</button>
+  </div>`:""}
   <div class="card">
     <h2>Puerta</h2>
     <p class="sub">${regs} con pase de ${tot} invitados · ${ent} dentro · ${tot-regs} sin pase</p>
@@ -2164,6 +2207,7 @@ function vPuerta(){
       </li>`;}).join("")}</ul>`
      :`<div class="empty">${nq?"Nadie con ese nombre o folio":"Sin registros"}</div>`}
     ${ent?`<button class="btn-gh btn-w btn-s" style="margin-top:12px" id="puCero">Borrar todas las entradas y dejarlo en cero</button>`:""}
+    ${regs&&isAdmin()?`<button class="btn-gh btn-w btn-s" style="margin-top:8px;color:var(--bad)" id="puVaciar">Borrar los ${regs} pases y vaciar el registro</button>`:""}
   </div>
 
   ${Object.keys(prom).length?`<div class="card">
@@ -2356,6 +2400,8 @@ document.addEventListener("click",async e=>{
   if(id==="puScanOff"){ scanStop(); SCAN.msg=null; render(); return; }
   if(id==="puPub"){ pubPublicar(); return; }
   if(id==="puCero"){ pubBorrarEntradas(); return; }
+  if(id==="puVaciar"){ pubBorrarTodo(); return; }
+  if(id==="puReintenta"){ PUBAUTO=true; PUBERR=""; PUBERRTS=0; render(); pubPublicar(); return; }
   if(id==="puRulesSave"){
     const t=String((document.getElementById("puRules")||{}).value||"");
     S.meta.rules=t;
