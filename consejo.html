@@ -1429,6 +1429,7 @@ function render(){
   $("#dot").className="syncdot "+(!FBon?"local":(online&&!p?"on":"pend"));
   const w=$("#whoBtn"); if(w) w.title = p? p+" cambios pendientes de subir":"";
   if(typeof pubAuto==="function") pubAuto();
+  if(typeof aggAuto==="function") aggAuto();
 }
 
 document.addEventListener("click",e=>{
@@ -1747,6 +1748,7 @@ async function initFB(){
     ref=d.ref(db,ROOM);
     FBon=true;
     pubInit(d);
+    authInit(app);
 
     /* estado real de conexión */
     d.onValue(d.ref(db,".info/connected"), s=>{
@@ -1926,6 +1928,22 @@ function promTxt(s){
   return x? " · prometido "+x.qty : "";
 }
 
+/* El acumulado se publica aparte para que la app de invitados no tenga que
+   leer los registros de todos. Lo recalcula el consejo cuando cambia. */
+let AGGSIG="", aggTimer=0;
+function aggAuto(){
+  if(!PUBon||!online||!isAdmin()||!PUBAUTO) return;
+  const p=pubProm(), o={};
+  Object.keys(p).forEach(s=>{ o[s]=p[s].qty; });
+  const f=JSON.stringify(o);
+  if(f===AGGSIG) return;
+  clearTimeout(aggTimer);
+  aggTimer=setTimeout(async()=>{
+    const ok=await pubWrite({agg:{prom:o,ts:Date.now()}},true);
+    if(ok) AGGSIG=f;
+  },3000);
+}
+
 /* ---------- entradas ---------- */
 async function pubEntrada(gid){
   const r=PUB.live[gid];
@@ -1967,7 +1985,7 @@ async function pubBorrarTodo(){
   if(cl.toUpperCase()!==CLAVE_BORRAR){ toast("Clave secreta incorrecta"); return; }
   if(!confirm("Borrar los "+ids.length+" pases y sus registros. Toda esa gente tiene que volver a sacar su boleto y elegir NIP otra vez.")) return;
   const up={};
-  ids.forEach(g=>{ up["live/"+g]=null; up["reg/"+g]=null; });
+  ids.forEach(g=>{ up["live/"+g]=null; up["reg/"+g]=null; up["taken/"+g]=null; });
   const ok=await pubWrite(up);
   if(!ok) return;
   PUB.live={}; PUBDET={}; PUBSEL=null;
@@ -1985,7 +2003,7 @@ async function pubDetalle(gid){
 async function pubResetPase(gid){
   const nom=(PUB.roster[gid]||PUB.live[gid]||{}).name||"";
   if(!confirm("Borrar el pase de "+nom+". Va a tener que registrarse otra vez y elegir un NIP nuevo.")) return;
-  const ok=await pubWrite({["live/"+gid]:null,["reg/"+gid]:null});
+  const ok=await pubWrite({["live/"+gid]:null,["reg/"+gid]:null,["taken/"+gid]:null});
   if(!ok) return;
   delete PUB.live[gid]; delete PUBDET[gid];
   save("supplies","reseteó el pase de "+nom,[]);
@@ -2507,13 +2525,30 @@ async function hashNip(id,p){
 function renderGate(){
   const el=$("#gate"); if(!el) return;
   const c=meCrew();
-  const need = !c || gateOpen || !authOK();
+  const need = !c || gateOpen || !authOK() || authFalta();
   if(!need){ el.classList.add("hide"); GATE.paso="lista"; GATE.pin=""; GATE.pin2=""; return; }
   el.classList.remove("hide");
 
   /* si el teléfono ya sabe quién es pero caducó, se le pide su NIP directo */
   if(!gateOpen && c && !authOK() && GATE.paso==="lista"){
     GATE.id=ME; GATE.paso=c.pinh?"pedir":"nuevo"; GATE.pin=""; GATE.pin2="";
+  }
+  /* con el NIP resuelto, falta la clave compartida que abre la base */
+  if(c && authOK() && authFalta()){
+    el.innerHTML=`
+      <div class="gi"><img src="${ICON}" alt="">
+        <div><h2>Clave del consejo</h2><p class="g2">una sola para los diez, se pide una vez por dispositivo</p></div></div>
+      <div class="card">
+        <p class="sub">Sin ella la base no deja ver teléfonos, direcciones de red ni el tablero.
+          Si no te la sabes, pídesela a ${esc(SUPER.join(", "))}.</p>
+        <div class="row" style="margin-top:10px">
+          <input id="gClave" type="password" placeholder="Clave del consejo" autocomplete="current-password">
+        </div>
+        ${authMsg?`<p class="sub" style="color:var(--bad)">${esc(authMsg)}</p>`:""}
+        <button class="btn-p btn-w" id="gClaveGo" style="margin-top:10px">Entrar</button>
+      </div>
+      <button class="btn-gh btn-w btn-s" id="gOtro" style="margin-top:10px">Entrar como otro</button>`;
+    return;
   }
 
   if(GATE.paso==="lista"){
@@ -2617,6 +2652,10 @@ function vSoporteConsejo(){
       <div class="li-s">${esc(c.code||"—")} · ${c.pinh?"con NIP registrado":"sin NIP, lo elige al entrar"}</div></div>
       ${yo&&c.pinh?`<button class="btn-gh btn-s" data-nip-del="${c.id}">Borrar NIP</button>`:""}
     </li>`).join("")}</ul>
+    <p class="sub" style="margin-top:12px">clave compartida de la base: ${
+      AUTHOFF?"sin activar todavía en Firebase"
+      :AUTHU?"activa en este dispositivo":"falta escribirla"}</p>
+    ${AUTHU?`<button class="btn-gh btn-w btn-s" id="supSalir">Olvidar la clave en este dispositivo</button>`:""}
   </div>`;
 }
 
@@ -2637,6 +2676,79 @@ document.addEventListener("click",async e=>{
   const d=t.getAttribute("data-nip-del");
   if(d){ e.stopPropagation(); borrarNip(d); return; }
 },true);
+
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("button"); if(!b) return;
+  if(b.id==="gClaveGo"){
+    const v=String(($("#gClave")||{}).value||"");
+    if(!v){ toast("Escribe la clave"); return; }
+    await authEntrar(v); return;
+  }
+  if(b.id==="gOtro"){ authOut(); GATE.paso="lista"; gateOpen=true; render(); return; }
+  if(b.id==="supSalir"){ authSalir(); return; }
+},true);
+
+/* ============================================================
+   CLAVE DEL CONSEJO
+   Una sola cuenta de Firebase para los diez. Mientras nadie entre
+   con ella, la base no deja leer teléfonos, direcciones de red ni
+   el tablero del consejo. La clave la escribe cada quien una vez
+   por dispositivo; no viaja dentro del archivo.
+   ============================================================ */
+const AUTH_MAIL="consejo@antromango.mx";
+const CLAVEK="mngostat.clave";
+let AUTHM=null, AUTHA=null, AUTHU=null, AUTHOFF=false, AUTHLISTO=false, authMsg="";
+
+function authFalta(){ return AUTHLISTO && !AUTHOFF && !AUTHU; }
+
+async function authInit(app){
+  try{
+    let m=null;
+    for(const u of ["https://cdn.jsdelivr.net/npm/firebase@10.12.0/auth/+esm",
+                    "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js"]){
+      try{ m=await import(u); break; }catch(e){}
+    }
+    if(!m){ AUTHOFF=true; AUTHLISTO=true; render(); return; }
+    AUTHM=m; AUTHA=m.getAuth(app);
+    m.onAuthStateChanged(AUTHA,u=>{ AUTHU=u; AUTHLISTO=true; render(); });
+    const cl=localStorage.getItem(CLAVEK);
+    if(cl) await authEntrar(cl,true);
+    else   await authProbe();
+    AUTHLISTO=true; render();
+  }catch(e){ AUTHOFF=true; AUTHLISTO=true; render(); }
+}
+/* averigua si la cuenta ya está activada sin pedirle nada a nadie */
+async function authProbe(){
+  try{ await AUTHM.signInWithEmailAndPassword(AUTHA,AUTH_MAIL,"probe-"+Math.random()); }
+  catch(e){
+    const c=String((e&&e.code)||"");
+    if(/operation-not-allowed|configuration-not-found|api-key-not-valid/.test(c)) AUTHOFF=true;
+  }
+}
+async function authEntrar(clave,callado){
+  if(!AUTHM||!AUTHA) return false;
+  try{
+    await AUTHM.signInWithEmailAndPassword(AUTHA,AUTH_MAIL,clave);
+    try{ localStorage.setItem(CLAVEK,clave); }catch(e){}
+    authMsg=""; AUTHOFF=false; render();
+    if(!callado) toast("Clave correcta");
+    return true;
+  }catch(e){
+    const c=String((e&&e.code)||"");
+    if(/operation-not-allowed|configuration-not-found/.test(c)){ AUTHOFF=true; render(); return true; }
+    authMsg = /wrong-password|invalid-credential|user-not-found|invalid-login/.test(c)
+      ? "Clave del consejo incorrecta" : "No se pudo entrar ("+c.replace("auth/","")+")";
+    try{ localStorage.removeItem(CLAVEK); }catch(e2){}
+    if(!callado) toast(authMsg);
+    render();
+    return false;
+  }
+}
+function authSalir(){
+  try{ localStorage.removeItem(CLAVEK); }catch(e){}
+  if(AUTHM&&AUTHA) AUTHM.signOut(AUTHA).catch(()=>{});
+  AUTHU=null; authOut(); render();
+}
 
 /* ---------- arranque ---------- */
 S=load();
