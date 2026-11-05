@@ -2521,7 +2521,8 @@ let TAB="pass";                  /* pass · falta · reglas · info */
 let PINMODE="open";              /* open · nuevo · confirma */
 let roster=ls.g(LK.ros,{});
 let needs =ls.g(LK.nee,{});
-let live  ={};
+let taken ={};                   /* gid -> 1, quién ya sacó pase */
+let agg   ={};                   /* acumulado que publica el consejo */
 let me    =ls.g(LK.me,null);     /* {gid,num,name} */
 let mine  =ls.g(LK.mine,null);   /* copia local del propio registro, sirve sin señal */
 let pick  =null;
@@ -2531,7 +2532,7 @@ let q="";                        /* búsqueda de nombre propio */
 let qi="";                       /* búsqueda de quién invitó */
 let invPick=null;                /* {gid,name} de quien invitó */
 let NET=null;                    /* {ip,ciudad} */
-let db=null,fns=null,online=false,FBon=false;
+let online=false;
 
 /* ---------- utilidades ---------- */
 const $=s=>document.querySelector(s);
@@ -2608,15 +2609,49 @@ async function hashPin(gid,p){
 }
 
 /* ---------- escritura con cola, sobrevive a la falta de señal ---------- */
+/* La base se consulta por peticiones sueltas, no por conexión permanente.
+   El plan gratuito de Firebase tolera 100 conexiones simultáneas, y aquí
+   son trescientas personas; por REST no se ocupa ninguna. */
+const BASE=String(FB.databaseURL||"").replace(/\/+$/,"")+"/"+ROOM;
+async function rGet(ruta){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),9000);
+  try{
+    const r=await fetch(BASE+"/"+ruta+".json",{cache:"no-store",signal:c.signal});
+    clearTimeout(t);
+    if(!r.ok) throw new Error("GET "+r.status);
+    online=true;
+    return await r.json();
+  }catch(e){ clearTimeout(t); online=false; throw e; }
+}
+async function rPatch(up){
+  const c=new AbortController(), t=setTimeout(()=>c.abort(),12000);
+  try{
+    const r=await fetch(BASE+".json",{method:"PATCH",signal:c.signal,
+      headers:{"Content-Type":"application/json"},body:JSON.stringify(up)});
+    clearTimeout(t);
+    if(!r.ok) throw new Error("PATCH "+r.status);
+    online=true; return true;
+  }catch(e){ clearTimeout(t); online=false; return false; }
+}
+
 function qGet(){ return ls.g(LK.q,[]); }
 function put(up){
   const c=qGet(); Object.keys(up).forEach(p=>c.push({p,v:up[p]})); ls.s(LK.q,c); flush();
 }
+let flushEnVuelo=false;
 async function flush(){
-  if(!FBon||!db) return;
+  if(flushEnVuelo) return;
   const c=qGet(); if(!c.length) return;
+  flushEnVuelo=true;
+  /* una sola petición con todos los cambios pendientes, en orden */
   const up={}; c.forEach(e=>up[e.p]= e.v===null?null:e.v);
-  try{ await fns.update(fns.ref(db,ROOM),up); ls.s(LK.q,[]); }catch(e){}
+  const ok=await rPatch(up);
+  flushEnVuelo=false;
+  if(ok){
+    const quedan=qGet().slice(c.length);   /* lo que entró mientras se subía */
+    ls.s(LK.q,quedan);
+  }
+  render();
 }
 
 /* =====================================================================
@@ -2672,7 +2707,7 @@ function hitsHTML(){
     return '<p class="mut">Ese nombre no está en la lista.</p>'+
            '<a class="btn wa" href="'+waLink(q)+'" target="_blank" rel="noopener">Avisar que no aparezco</a>';
   return hits.map(x=>{
-    const ya=!!live[x.gid];
+    const ya=!!taken[x.gid];
     return '<button class="hit '+(ya?"done":"")+'" data-pick="'+esc(x.gid)+'">'+
      '<div class="av">'+(ya?"✓":esc(String(x.name||"?").trim().charAt(0).toUpperCase()))+'</div>'+
      '<div><div class="nm">'+esc(x.name)+'</div><div class="sb">'+
@@ -2817,13 +2852,8 @@ function drawQR(){
 
 /* ---------- qué falta y qué lleva cada quien ---------- */
 function prometido(){
-  const p={};
-  Object.keys(live).forEach(g=>{ const b=live[g].bring||{};
-    Object.keys(b).forEach(s=>{ p[s]=(p[s]||0)+(+b[s].qty||0); }); });
-  if(me&&mine&&mine.bring&&!live[me.gid]){
-    Object.keys(mine.bring).forEach(s=>{ p[s]=(p[s]||0)+(+mine.bring[s].qty||0); });
-  }
-  return p;
+  /* el acumulado lo calcula el consejo; aquí solo se muestra */
+  return Object.assign({},(agg&&agg.prom)||{});
 }
 function vFalta(){
   const ids=Object.keys(needs), mio=(mine&&mine.bring)||{}, prom=prometido();
@@ -2918,7 +2948,7 @@ document.addEventListener("click",async e=>{
   if(d.pick){
     pick=Object.assign({gid:d.pick},roster[d.pick]||{});
     pin=""; pin2=""; pinBad=false;
-    if(live[pick.gid]){ PINMODE="open"; SCR="pin"; } else SCR="alta";
+    if(taken[pick.gid]){ PINMODE="open"; SCR="pin"; } else SCR="alta";
     render(); return;
   }
   if(d.go==="quien"){
@@ -2981,21 +3011,21 @@ async function abrirConNip(){
   const g=(pick||me).gid;
   const h=await hashPin(g,pin);
   let real=null;
-  if(FBon&&db){ try{ const s=await fns.get(fns.ref(db,ROOM+"/reg/"+g)); if(s.exists()) real=s.val(); }catch(e){} }
+  try{ const ph=await rGet("reg/"+g+"/pinh"); if(ph) real={pinh:ph}; }catch(e){}
   if(!real&&mine&&mine.gid===g&&mine.pinh) real={pinh:mine.pinh,tel:mine.tel,ts:mine.ts};
   if(!real){ pin=""; render(); toast("No pudimos verificar. Revisa tu conexión."); return; }
   if(real.pinh&&real.pinh!==h){ pinBad=true; pin=""; render(); toast("NIP incorrecto"); return; }
-  const base=roster[g]||live[g]||{};
+  const base=roster[g]||{};
   me={gid:g,num:base.num,name:base.name};
   ls.s(LK.me,me);
   /* lo guardado en el teléfono es la base; la rama pública manda cuando existe */
   const antes=(mine&&mine.gid===g)?mine:{};
-  mine=Object.assign({},antes,live[g]||{},
+  mine=Object.assign({},antes,
         {gid:g,tel:real.tel||antes.tel,pinh:real.pinh||antes.pinh,
-         ts:real.ts||(live[g]||{}).ts||antes.ts});
+         ts:real.ts||antes.ts});
   ls.s(LK.mine,mine);
   pin=""; pick=null; SCR="pass"; TAB="pass"; render();
-  logOpen();
+  logOpen(); cargarMio();
 }
 
 /* ---------- alta de un pase nuevo ---------- */
@@ -3012,8 +3042,8 @@ async function altaFinal(){
               dev:{id:DEV.id,mod:DEV.mod,nav:DEV.nav,scr:DEV.scr,lang:DEV.lang,tz:DEV.tz},
               opens:{} };
   prv.opens[k]={ts,ip:n.ip||"",ciudad:n.ciudad||"",dev:DEV.id,mod:DEV.mod,nav:DEV.nav};
-  put({ ["live/"+g]:pub, ["reg/"+g]:prv });
-  live[g]=pub;
+  put({ ["live/"+g]:pub, ["reg/"+g]:prv, ["taken/"+g]:ts });
+  taken[g]=ts;
   me={gid:g,num:pick.num,name:pick.name}; ls.s(LK.me,me);
   mine=Object.assign({},pub,{tel:pick.tel,pinh:h}); ls.s(LK.mine,mine);
   pin=""; pin2=""; PINMODE="open"; pick=null; invPick=null; qi=""; SCR="pass"; TAB="pass"; render();
@@ -3029,7 +3059,7 @@ async function logOpen(){
         ["live/"+me.gid+"/opens_n"]:nn,
         ["live/"+me.gid+"/last"]:ts });
   mine=Object.assign({},mine||{},{opens_n:nn,last:ts}); ls.s(LK.mine,mine);
-  if(live[me.gid]){ live[me.gid].opens_n=nn; live[me.gid].last=ts; }
+
   if(SCR==="pass"&&TAB==="pass") render();
 }
 
@@ -3044,37 +3074,40 @@ function setBring(sid,n){
     mine.bring[sid]=v; put({["live/"+me.gid+"/bring/"+sid]:v});
   }
   ls.s(LK.mine,mine);
-  if(live[me.gid]) live[me.gid].bring=Object.assign({},mine.bring);
+
   render();
 }
 
 /* =====================================================================
    sincronización
    ===================================================================== */
-async function initFB(){
+/* lo público: la lista, el inventario, las reglas, quién ya sacó pase
+   y el acumulado de lo que llevan los invitados */
+async function cargarPublico(){
+  const pide=async(ruta,fn)=>{ try{ fn(await rGet(ruta)); }catch(e){} };
+  await Promise.all([
+    pide("roster",v=>{ roster=v||{}; ls.s(LK.ros,roster); }),
+    pide("needs", v=>{ needs =v||{}; ls.s(LK.nee,needs); }),
+    pide("reglas",v=>{ rules =v||""; ls.s(LK.rul,rules); }),
+    pide("taken", v=>{ taken =v||{}; }),
+    pide("agg",   v=>{ agg   =v||{}; })
+  ]);
+  render();
+}
+/* el propio registro, para ver si ya marcaron la entrada */
+async function cargarMio(){
+  if(!me||!me.gid) return;
   try{
-    const SRC=[["https://cdn.jsdelivr.net/npm/firebase@10.12.0/app/+esm",
-                "https://cdn.jsdelivr.net/npm/firebase@10.12.0/database/+esm"],
-               ["https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js",
-                "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js"]];
-    let a,d;
-    for(const s of SRC){ try{ a=await import(s[0]); d=await import(s[1]); break; }catch(err){ a=null; } }
-    if(!a) throw new Error("firebase no cargó");
-    const app=a.initializeApp(FB); db=d.getDatabase(app); fns=d; FBon=true;
-    d.onValue(d.ref(db,".info/connected"),s=>{ online=s.val()===true; if(online) flush(); render(); });
-    d.onValue(d.ref(db,ROOM+"/roster"),s=>{ roster=s.val()||{}; ls.s(LK.ros,roster);
-      if(SCR==="find"){ const c=$("#hits"); if(c) c.innerHTML=hitsHTML(); else render(); } });
-    d.onValue(d.ref(db,ROOM+"/needs"),s=>{ needs=s.val()||{}; ls.s(LK.nee,needs);
-      if(SCR==="pass"&&TAB==="falta") render(); });
-    d.onValue(d.ref(db,ROOM+"/reglas"),s=>{ rules=s.val()||""; ls.s(LK.rul,rules);
-      if(SCR==="pass"&&TAB==="reglas") render(); });
-    d.onValue(d.ref(db,ROOM+"/live"),s=>{
-      live=s.val()||{};
-      if(me&&live[me.gid]) { mine=Object.assign({},mine||{},live[me.gid],
-        {tel:(mine||{}).tel,pinh:(mine||{}).pinh}); ls.s(LK.mine,mine); }
-      render();
-    });
-  }catch(e){ FBon=false; render(); }
+    const v=await rGet("live/"+me.gid);
+    if(v){
+      const a=mine||{};
+      /* lo que todavía no termina de subir no debe retroceder el contador */
+      mine=Object.assign({},a,v,{tel:a.tel,pinh:a.pinh,
+        opens_n:Math.max(+a.opens_n||0,+v.opens_n||0),
+        last:Math.max(+a.last||0,+v.last||0)});
+      ls.s(LK.mine,mine); render();
+    }
+  }catch(e){}
 }
 
 /* =====================================================================
@@ -3085,12 +3118,23 @@ async function initFB(){
   else SCR="find";
   render();
   net();
-  initFB();
+  cargarPublico().then(()=>{ cargarMio(); flush(); });
   /* el segundero se repinta solo, sin volver a dibujar la pantalla */
   setInterval(()=>{ if(SCR!=="find") return; const c=$("#cd"); if(c) c.outerHTML=cuenta(); },1000);
   setInterval(()=>{ if(SCR==="pass"&&TAB==="pass") render(); },30000);
   setInterval(flush,15000);
-  window.addEventListener("online",flush);
+  /* el estado del propio pase se consulta de vez en cuando, y solo con la
+     pantalla encendida y a la vista */
+  setInterval(()=>{
+    if(document.hidden||SCR!=="pass") return;
+    if(TAB==="pass") cargarMio();
+    else if(TAB==="falta") cargarPublico();
+  },60000);
+  document.addEventListener("visibilitychange",()=>{
+    if(document.hidden) return;
+    flush(); if(SCR==="pass") cargarMio(); else cargarPublico();
+  });
+  window.addEventListener("online",()=>{ flush(); cargarPublico(); });
 })();
 </script>
 </body>
