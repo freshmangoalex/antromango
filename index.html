@@ -3066,7 +3066,7 @@ async function initFB(){
       if(SCR==="find"){ const c=$("#hits"); if(c) c.innerHTML=hitsHTML(); else render(); } });
     d.onValue(d.ref(db,ROOM+"/needs"),s=>{ needs=s.val()||{}; ls.s(LK.nee,needs);
       if(SCR==="pass"&&TAB==="falta") render(); });
-    d.onValue(d.ref(db,ROOM+"/rules"),s=>{ rules=s.val()||""; ls.s(LK.rul,rules);
+    d.onValue(d.ref(db,ROOM+"/reglas"),s=>{ rules=s.val()||""; ls.s(LK.rul,rules);
       if(SCR==="pass"&&TAB==="reglas") render(); });
     d.onValue(d.ref(db,ROOM+"/live"),s=>{
       live=s.val()||{};
