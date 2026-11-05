@@ -157,6 +157,16 @@ nav{position:fixed;bottom:0;left:0;right:0;z-index:50;background:rgba(255,255,25
 .navs button.on .ic{filter:saturate(1.4)}
 .badge{position:absolute;top:2px;right:4px;background:var(--red);color:#fff;font-size:9.5px;font-weight:800;border-radius:999px;padding:1px 5px}
 
+.gpins{display:flex;gap:12px;justify-content:center;margin:16px 0 20px}
+.gpins i{width:15px;height:15px;border-radius:50%;background:var(--card2);box-shadow:inset 0 0 0 1.5px var(--line);transition:transform .14s,background .14s}
+.gpins i.f{background:var(--tx);box-shadow:none;transform:scale(1.12)}
+.gpins.bad i{background:#FDE2E0;box-shadow:inset 0 0 0 1.5px rgba(232,52,43,.45)}
+@keyframes gshk{10%,90%{transform:translateX(-2px)}30%,70%{transform:translateX(4px)}50%{transform:translateX(-5px)}}
+.gpins.bad{animation:gshk .4s}
+.gkp{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;max-width:300px;margin:0 auto}
+.gkp button{padding:15px 0;border-radius:15px;background:var(--bg2);box-shadow:var(--sh);font-size:22px;font-weight:800}
+.gkp button:active{background:var(--card2)}
+.gkp button.z{background:transparent;box-shadow:none;font-size:14px;font-weight:800;color:var(--tx2)}
 .hide{display:none!important}
 .ring{flex:0 0 auto;display:block}
 .invrow{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid rgba(31,23,36,.07);border-radius:var(--r2);padding:11px 12px;margin-bottom:8px}
@@ -1953,8 +1963,9 @@ async function pubBorrarEntradas(){
 async function pubBorrarTodo(){
   const ids=Object.keys(PUB.live||{});
   if(!ids.length){ toast("No hay pases que borrar"); return; }
+  const cl=String((document.getElementById("puClave")||{}).value||"").trim();
+  if(cl.toUpperCase()!==CLAVE_BORRAR){ toast("Clave secreta incorrecta"); return; }
   if(!confirm("Borrar los "+ids.length+" pases y sus registros. Toda esa gente tiene que volver a sacar su boleto y elegir NIP otra vez.")) return;
-  if(!confirm("Seguro. Esto no se puede deshacer.")) return;
   const up={};
   ids.forEach(g=>{ up["live/"+g]=null; up["reg/"+g]=null; });
   const ok=await pubWrite(up);
@@ -2207,7 +2218,11 @@ function vPuerta(){
       </li>`;}).join("")}</ul>`
      :`<div class="empty">${nq?"Nadie con ese nombre o folio":"Sin registros"}</div>`}
     ${ent?`<button class="btn-gh btn-w btn-s" style="margin-top:12px" id="puCero">Borrar todas las entradas y dejarlo en cero</button>`:""}
-    ${regs&&isAdmin()?`<button class="btn-gh btn-w btn-s" style="margin-top:8px;color:var(--bad)" id="puVaciar">Borrar los ${regs} pases y vaciar el registro</button>`:""}
+    ${regs&&isAdmin()?`<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+      <p class="sub">para vaciar el registro completo hay que escribir la clave secreta</p>
+      <div class="row"><input id="puClave" placeholder="clave secreta" autocapitalize="characters" autocomplete="off"></div>
+      <button class="btn-gh btn-w btn-s" style="margin-top:8px;color:var(--bad)" id="puVaciar">Borrar los ${regs} pases y vaciar el registro</button>
+    </div>`:""}
   </div>
 
   ${Object.keys(prom).length?`<div class="card">
@@ -2337,7 +2352,8 @@ function vRegistro(){
    ============================================================ */
 function vSoporte(){
   if(!isAdmin()) return `<div class="card"><h2>Soporte</h2>
-    <p class="sub">esta pestaña trae teléfonos y datos de conexión, así que solo la abre el administrador</p></div>`;
+    <p class="sub">los datos de los invitados traen teléfonos y direcciones de red, así que esa parte solo la abre el administrador</p></div>`
+    + vSoporteConsejo();
   const nq=norm(SUPQ);
   const G=(S.guests||[]);
   const hits=!nq?[]:G.filter(g=>{
@@ -2348,9 +2364,9 @@ function vSoporte(){
   const sel=SUPSEL?(G.find(g=>g.id===SUPSEL)||{}):null;
   const lv=SUPSEL?PUB.live[SUPSEL]:null;
 
-  return `
+  return vSoporteConsejo() + `
   <div class="card">
-    <h2>Soporte</h2>
+    <h2>Invitados</h2>
     <p class="sub">busca a cualquier invitado y abre todo lo que la base guarda de él</p>
     <div class="row"><input id="supQ" placeholder="Nombre, apodo o folio" value="${esc(SUPQ)}"></div>
     ${nq&&!hits.length?`<div class="empty">Nadie con ese nombre</div>`:""}
@@ -2449,6 +2465,178 @@ document.addEventListener("input",e=>{
   if(t.id==="regQ"){ REGQ=t.value; const p=t.selectionStart; render();
     const n=document.getElementById("regQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } return; }
 });
+
+/* ============================================================
+   ACCESO DEL CONSEJO
+   Cada integrante tiene su NIP de cuatro dígitos. Se pide cuando
+   el teléfono no lo recuerda o cuando pasaron más de siete días.
+   Solo mango, nicole y juan pueden borrar el NIP de otro.
+   ============================================================ */
+const AUTHK="mngostat.auth", AUTHDIAS=7;
+const SUPER=["mango","nicole","juan"];
+const CLAVE_BORRAR="SOYGAYPORSIEMPRE.COM";
+let GATE={paso:"lista", id:null, pin:"", pin2:"", bad:false};
+
+function esSuper(c){ return !!(c && SUPER.indexOf(norm(c.name))>=0); }
+function soySuper(){ return esSuper(meCrew()); }
+
+function authOK(){
+  try{
+    const a=JSON.parse(localStorage.getItem(AUTHK)||"null");
+    return !!(a && a.id===ME && (Date.now()-(+a.ts||0)) < AUTHDIAS*864e5);
+  }catch(e){ return false; }
+}
+function authSet(){ try{ localStorage.setItem(AUTHK,JSON.stringify({id:ME,ts:Date.now()})); }catch(e){} }
+function authOut(){ try{ localStorage.removeItem(AUTHK); }catch(e){} }
+
+/* el NIP se guarda derivado con SHA-256, nunca en claro */
+async function hashNip(id,p){
+  const txt="mngostat:"+id+":"+p;
+  try{
+    if(window.crypto&&crypto.subtle&&crypto.subtle.digest){
+      const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(txt));
+      return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");
+    }
+  }catch(e){}
+  let h=0x811c9dc5;
+  for(let i=0;i<txt.length;i++){ h^=txt.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; }
+  return "fnv"+h.toString(16);
+}
+
+/* ---------- la pantalla de entrada, con NIP ---------- */
+function renderGate(){
+  const el=$("#gate"); if(!el) return;
+  const c=meCrew();
+  const need = !c || gateOpen || !authOK();
+  if(!need){ el.classList.add("hide"); GATE.paso="lista"; GATE.pin=""; GATE.pin2=""; return; }
+  el.classList.remove("hide");
+
+  /* si el teléfono ya sabe quién es pero caducó, se le pide su NIP directo */
+  if(!gateOpen && c && !authOK() && GATE.paso==="lista"){
+    GATE.id=ME; GATE.paso=c.pinh?"pedir":"nuevo"; GATE.pin=""; GATE.pin2="";
+  }
+
+  if(GATE.paso==="lista"){
+    el.innerHTML=`
+      <div class="gi"><img src="${ICON}" alt="">
+        <div><h2>¿Quién eres?</h2><p class="g2">elige tu ID y pon tu NIP</p></div></div>
+      ${S.crew.map(c2=>`<button class="u" data-me="${c2.id}">
+         <span class="cd2">${esc(c2.code||"—")}</span>
+         <span class="nm">${esc(c2.name)}</span>
+         ${c2.pinh?`<span class="ad" style="background:rgba(31,23,36,.07);color:var(--tx2)">NIP</span>`:""}
+         ${c2.admin?`<span class="ad">ADMIN</span>`:""}
+       </button>`).join("")}
+      <div class="card" style="margin-top:16px">
+        <h2>No estoy en la lista</h2>
+        <div class="row" style="margin-top:10px"><input id="gNew" placeholder="Tu nombre"><button class="btn-p" style="flex:0 0 86px" id="gNewAdd">Entrar</button></div>
+      </div>
+      ${meCrew()&&authOK()?`<button class="btn-gh btn-w btn-s" id="gClose" style="margin-top:10px">Cancelar</button>`:""}`;
+    return;
+  }
+
+  const q=S.crew.find(x=>x.id===GATE.id)||{};
+  const nuevo=GATE.paso==="nuevo"||GATE.paso==="confirma";
+  const tit=GATE.paso==="pedir"?"Tu NIP"
+          :GATE.paso==="nuevo"?"Elige tu NIP":"Confírmalo";
+  const sub=GATE.paso==="pedir"?"cuatro dígitos, los que registraste"
+          :GATE.paso==="nuevo"?"cuatro dígitos. Te los va a pedir cuando entres desde otro teléfono o después de una semana"
+          :"escríbelos otra vez";
+  const cur=GATE.paso==="confirma"?GATE.pin2:GATE.pin;
+  el.innerHTML=`
+    <div class="gi"><img src="${ICON}" alt="">
+      <div><h2>${esc(q.name||"")}</h2><p class="g2">${esc(sub)}</p></div></div>
+    <div class="card" style="text-align:center;padding:20px 16px 16px">
+      <h2>${esc(tit)}</h2>
+      <div class="gpins${GATE.bad?" bad":""}">${[0,1,2,3].map(i=>`<i class="${cur.length>i?"f":""}"></i>`).join("")}</div>
+      <div class="gkp">
+        ${[1,2,3,4,5,6,7,8,9].map(d=>`<button data-gk="${d}">${d}</button>`).join("")}
+        <button class="z" data-gk="back">Atrás</button>
+        <button data-gk="0">0</button>
+        <button class="z" data-gk="del">Borrar</button>
+      </div>
+    </div>
+    ${GATE.paso==="pedir"?`<p class="sub" style="text-align:center">si lo olvidaste, que ${SUPER.join(", ")} te lo borren desde Soporte</p>`:""}`;
+}
+
+async function gateTecla(k){
+  let cur=GATE.paso==="confirma"?GATE.pin2:GATE.pin;
+  if(k==="del") cur="";
+  else if(k==="back"){
+    if(cur.length) cur=cur.slice(0,-1);
+    else if(GATE.paso==="confirma"){ GATE.paso="nuevo"; GATE.pin=""; cur=""; }
+    else { GATE.paso="lista"; GATE.pin=""; GATE.pin2=""; GATE.bad=false; renderGate(); return; }
+  }
+  else if(cur.length<4) cur+=k;
+  GATE.bad=false;
+  if(GATE.paso==="confirma") GATE.pin2=cur; else GATE.pin=cur;
+  renderGate();
+  if(cur.length!==4) return;
+  await new Promise(r=>setTimeout(r,140));
+
+  const c=S.crew.find(x=>x.id===GATE.id);
+  if(!c){ GATE.paso="lista"; renderGate(); return; }
+
+  if(GATE.paso==="pedir"){
+    const h=await hashNip(c.id,GATE.pin);
+    if(c.pinh && c.pinh!==h){ GATE.bad=true; GATE.pin=""; renderGate(); toast("NIP incorrecto"); return; }
+    setMe(c.id); authSet(); gateOpen=false;
+    GATE.paso="lista"; GATE.pin=""; GATE.bad=false;
+    render(); toast("Hola "+c.name); return;
+  }
+  if(GATE.paso==="nuevo"){ GATE.paso="confirma"; GATE.pin2=""; renderGate(); return; }
+  /* confirma */
+  if(GATE.pin2!==GATE.pin){ GATE.bad=true; GATE.pin2=""; renderGate(); toast("No coinciden"); return; }
+  c.pinh=await hashNip(c.id,GATE.pin);
+  setMe(c.id); authSet(); gateOpen=false;
+  save("crew","registró su NIP",c.id);
+  GATE.paso="lista"; GATE.pin=""; GATE.pin2=""; GATE.bad=false;
+  render(); toast("NIP registrado");
+}
+
+/* ---------- borrado del NIP de otro ---------- */
+function borrarNip(id){
+  if(!soySuper()){ toast("Solo "+SUPER.join(", ")+" pueden hacer eso"); return; }
+  const c=S.crew.find(x=>x.id===id); if(!c) return;
+  if(!confirm("Borrar el NIP de "+c.name+". Va a elegir uno nuevo la próxima vez que entre.")) return;
+  c.pinh="";
+  save("crew","borró el NIP de "+c.name,c.id);
+  if(c.id===ME){ authOut(); render(); }
+  toast("NIP borrado");
+}
+
+/* ---------- la tarjeta del consejo dentro de Soporte ---------- */
+function vSoporteConsejo(){
+  const yo=soySuper();
+  return `
+  <div class="card">
+    <h2>Claves del consejo</h2>
+    <p class="sub">${yo?"puedes borrar el NIP de quien lo haya olvidado"
+                      :"solo "+SUPER.join(", ")+" pueden borrar un NIP"}</p>
+    <ul class="lst">${S.crew.map(c=>`<li>
+      <div class="li-main"><div class="li-t">${esc(c.name)} ${esSuper(c)?'<span class="mk pvip">♛</span>':""}</div>
+      <div class="li-s">${esc(c.code||"—")} · ${c.pinh?"con NIP registrado":"sin NIP, lo elige al entrar"}</div></div>
+      ${yo&&c.pinh?`<button class="btn-gh btn-s" data-nip-del="${c.id}">Borrar NIP</button>`:""}
+    </li>`).join("")}</ul>
+  </div>`;
+}
+
+/* ---------- interacción ---------- */
+document.addEventListener("click",async e=>{
+  const t=e.target.closest("[data-me],[data-gk],[data-nip-del]");
+  if(!t) return;
+  const me2=t.getAttribute("data-me");
+  if(me2){
+    e.stopPropagation(); e.preventDefault();      /* el acceso directo de antes ya no aplica */
+    const c=S.crew.find(x=>x.id===me2);
+    GATE.id=me2; GATE.pin=""; GATE.pin2=""; GATE.bad=false;
+    GATE.paso=(c&&c.pinh)?"pedir":"nuevo";
+    renderGate(); return;
+  }
+  const k=t.getAttribute("data-gk");
+  if(k){ e.stopPropagation(); await gateTecla(k); return; }
+  const d=t.getAttribute("data-nip-del");
+  if(d){ e.stopPropagation(); borrarNip(d); return; }
+},true);
 
 /* ---------- arranque ---------- */
 S=load();
