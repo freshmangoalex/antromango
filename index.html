@@ -2507,7 +2507,7 @@ const ICON = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAMAAABOo35H
 /* ---------- almacenamiento del propio teléfono ---------- */
 const LK={me:"mngopase.me", dev:"mngopase.dev", ros:"mngopase.roster",
           nee:"mngopase.needs", mine:"mngopase.mine", q:"mngopase.queue",
-          rul:"mngopase.rules"};
+          rul:"mngopase.rules", tks:"mngopase.tokseen"};
 const REGLAS_BASE="Trae identificación oficial.\nNo compartas tu código con nadie.\nNo se permite fumar mota.";
 const ls={
   g(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } },
@@ -2533,6 +2533,7 @@ let qi="";                       /* búsqueda de quién invitó */
 let invPick=null;                /* {gid,name} de quien invitó */
 let NET=null;                    /* {ip,ciudad} */
 let online=false;
+let TOKNEW=false;                /* el consejo cambió el código y hay que avisarle */
 
 /* ---------- utilidades ---------- */
 const $=s=>document.querySelector(s);
@@ -2814,6 +2815,11 @@ function vPass(){
   const ops=+r.opens_n||0, ult=+r.last||0;
   const T=tema();
   return '<div class="pane">'+head(online?"Sincronizado":"Sin señal · tu código sigue sirviendo")+
+   (TOKNEW?'<div class="card flat" style="border:2px solid var(--org)">'+
+     '<h3>Tu código cambió</h3>'+
+     '<p>El consejo generó un código nuevo para ti. El de abajo es el que sirve en la puerta. '+
+     'Si guardaste una captura del anterior, bórrala: ya no entra. Tu NIP es el mismo.</p>'+
+     '<button class="btn ghost sm" data-go="tokok" style="margin-top:10px">Entendido</button></div>':"")+
    '<div class="tk '+(T.k?"tk-"+T.k:"")+'" style="box-shadow:'+T.glow+'">'+
    '<div class="hd" style="background:'+T.bg+'">'+(T.k==="vip"?estrellas():"")+
    '<div class="e1">'+esc(EV.name)+'</div>'+
@@ -2830,12 +2836,15 @@ function vPass(){
    '<div class="row"><span>Aperturas</span><b>'+ops+(ult?' · última '+esc(hora(ult)):"")+'</b></div>'+
    '</div></div>'+
    '<div class="card flat"><h3>En la puerta</h3><p>Muestra este código. Se escanea una vez y queda tu hora de '+
-   'entrada. Puedes guardar una captura: funciona igual sin señal.</p></div>'+
+   'entrada. Sirve sin señal. Si el consejo te cambia el código, el anterior deja de entrar, '+
+   'así que abre la app antes de llegar para traer el que vale.</p></div>'+
    '<button class="btn ghost sm" data-go="salir">Cerrar en este teléfono</button></div>';
 }
 function drawQR(){
   const box=$("#qr"); if(!box||!me) return;
-  const txt="AM4|"+me.gid+"|"+me.num;
+  /* el testigo al final es lo que hace que un código viejo deje de servir */
+  const tk=(mine&&mine.tok)?("|"+mine.tok):"";
+  const txt="AM4|"+me.gid+"|"+me.num+tk;
   try{
     const g=qrcode(0,"M"); g.addData(txt); g.make();
     const n=g.getModuleCount();
@@ -2965,9 +2974,10 @@ document.addEventListener("click",async e=>{
     if(!invPick){ toast("Elige quién te invitó"); return; }
     pin=""; pin2=""; PINMODE="nuevo"; SCR="pin"; render(); return;
   }
+  if(d.go==="tokok"){ TOKNEW=false; render(); return; }
   if(d.go==="salir"){
-    ls.d(LK.me); ls.d(LK.mine);
-    me=null; mine=null; pick=null; q=""; SCR="find"; render(); return;
+    ls.d(LK.me); ls.d(LK.mine); ls.d(LK.tks);
+    me=null; mine=null; pick=null; q=""; TOKNEW=false; SCR="find"; render(); return;
   }
   if(d.k){ await keypad(d.k); return; }
   if(d.b){
@@ -3046,6 +3056,7 @@ async function altaFinal(){
   taken[g]=ts;
   me={gid:g,num:pick.num,name:pick.name}; ls.s(LK.me,me);
   mine=Object.assign({},pub,{tel:pick.tel,pinh:h}); ls.s(LK.mine,mine);
+  ls.s(LK.tks,"");   /* un pase recién sacado todavía no tiene testigo */
   pin=""; pin2=""; PINMODE="open"; pick=null; invPick=null; qi=""; SCR="pass"; TAB="pass"; render();
   toast("Tu pase está listo");
 }
@@ -3105,7 +3116,13 @@ async function cargarMio(){
       mine=Object.assign({},a,v,{tel:a.tel,pinh:a.pinh,
         opens_n:Math.max(+a.opens_n||0,+v.opens_n||0),
         last:Math.max(+a.last||0,+v.last||0)});
-      ls.s(LK.mine,mine); render();
+      ls.s(LK.mine,mine);
+      /* si el testigo cambió respecto al que este teléfono ya había visto,
+         el código de antes quedó muerto y hay que decírselo */
+      const visto=ls.g(LK.tks,null), ahora=String(mine.tok||"");
+      if(visto===null) ls.s(LK.tks,ahora);
+      else if(visto!==ahora){ TOKNEW=true; ls.s(LK.tks,ahora); }
+      render();
     }
   }catch(e){}
 }
