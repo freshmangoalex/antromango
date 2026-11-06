@@ -258,8 +258,20 @@ table.hm{border-collapse:separate;border-spacing:1.5px}
 .cfb .ct i{display:block;height:100%}
 .cfb .cn{flex:0 0 32px;text-align:right;font-size:11.5px;font-weight:800}
 /* --- paginación --- */
-.pag{display:flex;align-items:center;gap:8px;margin-top:10px}
-.pag .pt{flex:1;text-align:center;font-size:11.5px;font-weight:800;color:var(--tx2)}
+.pag{display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap}
+.pag .pt{flex:1 1 90px;text-align:center;font-size:11.5px;font-weight:800;color:var(--tx2)}
+.pag select{flex:0 0 96px;padding:9px 10px;padding-right:28px;font-size:12.5px;
+  background-position:calc(100% - 14px) 50%,calc(100% - 9px) 50%}
+.pag button{padding:9px 0;font-size:13px}
+/* ficha desplegada dentro de un renglón */
+.det{flex:1 1 100%;min-width:0;margin-top:10px;padding-top:10px;
+  border-top:1px solid var(--line);overflow-wrap:anywhere}
+.det .dl{display:flex;gap:8px;font-size:12.5px;line-height:1.5;margin-bottom:2px}
+.det .dl b{flex:0 0 96px;color:var(--tx3);font-weight:800}
+.det .dl span{flex:1;min-width:0;color:var(--tx2);font-weight:700}
+.btn-wa{background:#1FAF54;color:#fff;font-weight:800}
+.btn-ig{background:linear-gradient(135deg,#F9A825,#E8342B,#8B5CF6);color:#fff;font-weight:800}
+.cerrar{display:flex;justify-content:flex-end;margin-bottom:6px}
 
 </style>
 </head>
@@ -3063,6 +3075,134 @@ function qrTarjeta(gid){
       :`<div class="li-s">en cuanto saque su pase, aquí aparece el código que el lector acepta</div>`}
     </div></div>`;
 }
+/* ============================================================
+   PAGINACIÓN
+   Cada lista tiene su clave. El tamaño de página se guarda en el
+   teléfono; cero quiere decir todos.
+   ============================================================ */
+const PGK="mngostat.pg";
+let PG=(function(){ try{ return JSON.parse(localStorage.getItem(PGK))||{}; }catch(e){ return {}; } })();
+let PGN={};
+function pgSize(k,def){ const v=PG[k]; return v===undefined?(def===undefined?10:def):+v; }
+function pgSet(k,v){ PG[k]=+v; PGN[k]=0; try{ localStorage.setItem(PGK,JSON.stringify(PG)); }catch(e){} }
+function pgCorta(k,arr,def){
+  const sz=pgSize(k,def);
+  if(!sz) return {items:arr,pag:0,total:1,sz:0,n:arr.length};
+  const total=Math.max(1,Math.ceil(arr.length/sz));
+  const p=Math.min(Math.max(0,+PGN[k]||0),total-1);
+  return {items:arr.slice(p*sz,p*sz+sz),pag:p,total:total,sz:sz,n:arr.length};
+}
+function pgBarra(k,r,def){
+  const sz=pgSize(k,def);
+  return `<div class="pag">
+    <select data-pgsz="${k}">${[5,10,25,50,0].map(v=>
+      `<option value="${v}"${v===sz?" selected":""}>${v?"de "+v:"todos"}</option>`).join("")}</select>
+    ${r.sz&&r.total>1
+      ? `<button class="btn-gh btn-s" style="flex:0 0 52px" data-pgn="${k}|${r.pag-1}"${r.pag===0?" disabled":""}>←</button>
+         <div class="pt">${r.pag*r.sz+1} a ${Math.min(r.n,r.pag*r.sz+r.sz)} de ${r.n}</div>
+         <button class="btn-gh btn-s" style="flex:0 0 52px" data-pgn="${k}|${r.pag+1}"${r.pag>=r.total-1?" disabled":""}>→</button>`
+      : `<div class="pt">${r.n} en total</div>`}
+  </div>`;
+}
+/* vuelve a dibujar sin perder el lugar donde iba la vista */
+function reRender(){
+  const y=window.scrollY||0;
+  render();
+  requestAnimationFrame(()=>window.scrollTo(0,y));
+}
+
+/* el padrino que la propia persona declaró al sacar su pase */
+function invDe(gid){
+  const lv=(PUB.live||{})[gid];
+  const n=lv&&lv.inv&&lv.inv.name;
+  return n?String(n):"";
+}
+/* a cuántos invitó esta persona, buscándola como padrino por su nombre */
+function ahijadosDe(g){
+  const k=norm(g.name), L=PUB.live||{};
+  if(!k) return [];
+  return (S.guests||[]).filter(x=>{
+    const lv=L[x.id];
+    return lv&&lv.inv&&lv.inv.name&&norm(lv.inv.name)===k;
+  });
+}
+
+/* ============================================================
+   FICHA DE REGISTRO
+   Es la que se abre dentro del renglón, en su lugar, sin mover la
+   lista. Trae el código, los botones para hablarle, lo que la base
+   guarda de su teléfono y sus estados.
+   ============================================================ */
+function waNum(g,det){
+  let n=String((g&&g.wa)||(det&&det.tel)||"").replace(/\D/g,"");
+  if(!n) return "";
+  if(n.length===10) n="52"+n;
+  if(n.length===11&&n.charAt(0)==="1") n="52"+n.slice(1);
+  return n;
+}
+function regDetalle(g){
+  const lv=(PUB.live||{})[g.id], det=PUBDET[g.id];
+  const st=qrEstado(g.id);
+  const wa=waNum(g,det);
+  const ig=String(g.ig||"").replace(/^@/,"");
+  const dev=(det&&det.dev)||{};
+  const ops=det?Object.keys(det.opens||{}).map(k=>det.opens[k]).sort((a,b)=>b.ts-a.ts):[];
+  const li=(k,v)=>`<div class="dl"><b>${k}</b><span>${v}</span></div>`;
+  return `<div class="det">
+    <div class="cerrar"><button class="btn-x" data-reg-cerrar="1">✕</button></div>
+    <div class="li-t" style="font-size:17px">${esc(g.name)} ${puMarcas(g.id)}</div>
+    <div class="li-s mono" style="margin-bottom:10px">${folio(g.num)}${g.nick?" · "+esc(g.nick):""}</div>
+    ${puAlerta(g.id)}
+    <div style="display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;margin-top:8px">
+      <div>${qrHTML(g.id)}</div>
+      <div style="flex:1 1 150px;min-width:140px">
+        <div class="li-t" style="color:${st.c};margin-bottom:6px">${st.lb}</div>
+        ${wa?`<a class="btn btn-wa btn-w btn-s" style="display:block;text-align:center;text-decoration:none;margin-bottom:6px"
+             target="_blank" rel="noopener" href="https://wa.me/${esc(wa)}">Hablar por WhatsApp</a>`
+           :`<div class="tiny" style="margin-bottom:6px">sin WhatsApp capturado</div>`}
+        ${ig?`<a class="btn btn-ig btn-w btn-s" style="display:block;text-align:center;text-decoration:none;margin-bottom:6px"
+             target="_blank" rel="noopener" href="https://instagram.com/${encodeURIComponent(ig)}">Abrir Instagram</a>`
+           :`<div class="tiny" style="margin-bottom:6px">sin Instagram capturado</div>`}
+        ${lv?`<button class="btn-y btn-w btn-s" style="margin-bottom:6px" data-pu-tok="${g.id}">Cambiar su código</button>
+          ${lv.entry&&lv.entry.ts
+            ? `<button class="btn-gh btn-w btn-s" data-pu-undo="${g.id}">Borrar su entrada</button>`
+            : `<button class="btn-g btn-w btn-s" data-pu-in="${g.id}">Marcar su entrada</button>`}`:""}
+      </div>
+    </div>
+    <hr class="sep">
+    ${li("Folio",'<span class="mono">'+folio(g.num)+"</span>")}
+    ${li("Teléfono", det?esc(det.tel||"—"):(g.wa?esc(g.wa):"cargando…"))}
+    ${li("Instagram", ig?"@"+esc(ig):"—")}
+    ${li("Dirección IP", det?esc(det.ip||"—"):"cargando…")}
+    ${li("Ciudad", det?esc(det.ciudad||"—"):"cargando…")}
+    ${li("Dispositivo", det?esc(dev.mod||"—"):"cargando…")}
+    ${li("Navegador", det?esc((dev.nav||"—")+(dev.scr?" · "+dev.scr:"")):"cargando…")}
+    ${li("Pase", lv?esc(horaC(lv.ts)):"todavía no lo saca")}
+    ${li("Código", lv?(lv.tok?'<b style="color:#C55A00">cambiado '+esc(horaC(lv.tokts))+"</b>":"original, nunca se ha cambiado"):"—")}
+    ${li("Entrada", lv&&lv.entry&&lv.entry.ts
+        ? '<b style="color:var(--ok)">'+esc(horaC(lv.entry.ts))+"</b> · marcó "+esc(lv.entry.by||"—")
+        : "sin registrar")}
+    ${li("Aperturas", lv?((+lv.opens_n||0)+(ops.length?" · "+ops.slice(0,6).map(o=>esc(horaC(o.ts))).join(" · "):"")):"—")}
+    ${li("Lo invitó", invDe(g.id)?esc(invDe(g.id)):"no lo declaró")}
+    ${li("Invitó a", ahijadosDe(g).length+" persona"+(ahijadosDe(g).length===1?"":"s"))}
+    ${li("Confianza", puntos(g)+" aval"+(puntos(g)===1?"":"es")+(puntos(g)?" · "+esc(quienesConocen(g).join(", ")):""))}
+    ${li("Etiquetas", tagsDe(g).length?tagHTML(g):"ninguna")}
+    ${li("NIP","derivado, no se puede leer. Si lo olvidó, borra el pase y lo vuelve a sacar.")}
+    ${lv&&Object.keys(lv.bring||{}).length?li("Va a llevar",
+        Object.keys(lv.bring).map(x=>esc((lv.bring[x].qty||0)+" "+(lv.bring[x].unit||"")+" "+(lv.bring[x].name||""))).join(", ")):""}
+    <hr class="sep">
+    <div class="tiny" style="margin-bottom:6px">Banderas</div>
+    ${banderasHTML(g.id)}
+    <div class="tiny" style="margin:12px 0 0">Etiquetas</div>
+    ${tagPicker(g)}
+    <div class="row" style="margin-top:10px">
+      <button class="btn-gh btn-s" data-gficha="${g.id}">Abrir su ficha completa</button>
+      <button class="btn-gh btn-s" data-reg-cerrar="1">Cerrar</button>
+    </div>
+    ${lv&&isAdmin()?`<button class="btn-gh btn-w btn-s" style="margin-top:8px;color:var(--bad)" data-sup-reset="${g.id}">Borrar el pase completo</button>`:""}
+  </div>`;
+}
+
 /* los botones de banderas, para prenderlas desde cualquier pestaña */
 function banderasHTML(gid){
   const g=(S.guests||[]).find(x=>x.id===gid); if(!g) return "";
@@ -3230,6 +3370,19 @@ function vFicha(g){
     <h2>${esc(g.full||g.name)}</h2>
     <p class="sub">${folio(g.num)} · ${g.sex==="M"?"hombre":g.sex==="F"?"mujer":"sin clasificar"} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"} · ${puntos(g)} punto${puntos(g)===1?"":"s"} de confianza</p>
     ${tagsDe(g).length?`<div style="margin:0 0 10px">${tagHTML(g)}</div>`:""}
+    ${(()=>{ const inv=invDe(g.id), aj=ahijadosDe(g);
+      if(!inv&&!aj.length) return (PUB.live||{})[g.id]
+        ? `<p class="sub" style="margin:-4px 0 10px">no declaró quién lo invitó</p>`
+        : `<p class="sub" style="margin:-4px 0 10px">todavía no saca su pase, por eso no hay padrino declarado</p>`;
+      return `<div style="margin:-2px 0 12px">
+        ${inv?`<div class="li-t" style="font-size:15px">Lo invitó ${esc(inv)}
+          <button class="btn-s btn-gh" style="flex:0 0 auto;padding:5px 10px;margin-left:6px"
+            data-pad-go="${esc(norm(inv))}">ver a los suyos</button></div>`:""}
+        ${aj.length?`<div class="li-s" style="margin-top:4px">Invitó a ${aj.length} persona${aj.length===1?"":"s"}:
+          ${esc(aj.slice(0,8).map(x=>x.name).join(", "))}${aj.length>8?" y "+(aj.length-8)+" más":""}
+          <button class="btn-s btn-gh" style="flex:0 0 auto;padding:5px 10px;margin-left:6px"
+            data-pad-go="${esc(norm(g.name))}">ver</button></div>`:""}
+      </div>`; })()}
     <div class="row">
       <button class="${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}">${loConozco(g)?"✓ Lo conozco":"🤙 Lo conozco"}</button>
       <button class="${g.flag?"btn-y":"btn-gh"}" data-gflag="${g.id}">${g.flag?"🚩 Con bandera":"🚩 Banderita"}</button>
@@ -3321,6 +3474,13 @@ function vFicha(g){
     <h2>Estado</h2>
     <ul class="lst">
       <li><div class="li-main"><div class="li-t">Folio</div></div><div class="li-n mono">${folio(g.num)}</div></li>
+      <li><div class="li-main"><div class="li-t">Quién lo invitó</div>
+        <div class="li-s">${invDe(g.id)?"lo declaró él mismo al sacar su pase"
+          :((PUB.live||{})[g.id]?"sacó su pase y no lo declaró":"todavía no saca su pase")}</div></div>
+        <span class="pill ${invDe(g.id)?"p-vio":"p-n"}">${invDe(g.id)?esc(invDe(g.id)):"—"}</span></li>
+      <li><div class="li-main"><div class="li-t">A cuántos invitó</div>
+        <div class="li-s">${ahijadosDe(g).length?"según lo que ellos declararon":"nadie lo declaró como padrino"}</div></div>
+        <span class="pill ${ahijadosDe(g).length?"p-ok":"p-n"}">${ahijadosDe(g).length}</span></li>
       <li><div class="li-main"><div class="li-t">Lo conocen</div>
         <div class="li-s">${puntos(g)?esc(quienesConocen(g).join(", ")):"nadie lo ha marcado"}</div></div>
         <span class="pill ${puntos(g)?"p-ok":"p-n"}">${puntos(g)} pt${puntos(g)===1?"":"s"}</span></li>
@@ -3336,7 +3496,9 @@ function vFicha(g){
       <li><div class="li-main"><div class="li-t">Apodo</div></div><span class="pill ${g.nick?"p-vio":"p-n"}">${g.nick?esc(g.nick):"falta"}</span></li>
       <li><div class="li-main"><div class="li-t">Responsabilidad</div></div><span class="pill ${(+g.resp||0)>=5?"p-ok":(+g.resp||0)>=3?"p-mid":"p-n"}">${+g.resp||0}/7</span></li>
       <li><div class="li-main"><div class="li-t">Dependen de él</div></div><span class="pill ${(+g.deps||0)>=3?"p-mid":"p-n"}">${+g.deps||0}/5</span></li>
-      <li><div class="li-main"><div class="li-t">Lo trae</div></div><span class="pill p-n">${esc(g.by||"—")}</span></li>
+      <li><div class="li-main"><div class="li-t">Lo dio de alta</div>
+        <div class="li-s">quién lo capturó en la lista, no quién lo invitó</div></div>
+        <span class="pill p-n">${esc(g.by||"—")}</span></li>
     </ul>
     ${g.note?`<div class="tiny" style="margin-top:10px">Nota: ${esc(g.note)}</div>`:""}
   </div>`;
@@ -3353,6 +3515,7 @@ function vGente(){
       <span class="pill ${g.sex==="M"?"p-m":g.sex==="F"?"p-f":"p-q"}">${g.sex==="M"?"H":g.sex==="F"?"M":"?"}</span>
       <div class="li-main"><div class="li-t">${esc(g.name)}${g.nick?` <span class="nick">“${esc(g.nick)}”</span>`:""} ${marcas(g)}</div>
       <div class="li-s">${folio(g.num)} · ${g.conf==="si"?"confirmado":g.conf==="tal"?"tal vez":"no viene"}${puntos(g)?" · "+puntos(g)+" pt":""}${(PUB.live||{})[g.id]?" · con QR":""}</div>
+      ${invDe(g.id)?`<div class="li-s">lo invitó ${esc(invDe(g.id))}</div>`:""}
       ${tagsDe(g).length?`<div style="margin-top:3px">${tagHTML(g)}</div>`:""}</div>
       <button class="btn-s ${loConozco(g)?"btn-g":"btn-gh"}" data-gknown="${g.id}" title="Lo conozco">🤙</button>
       <button class="btn-s ${g.vip?"btn-vip":"btn-gh"}" data-gvip="${g.id}" title="VIP">★</button>
@@ -3423,7 +3586,10 @@ function vGente(){
     </div>
     <div class="row">${sel("gSort",[["az","A → Z"],["za","Z → A"],["sexF","Sexo (mujeres primero)"],["sexM","Sexo (hombres primero)"],["conf","Confirmación"],["pts","Más avalados"],["resp","Responsabilidad"],["deps","Dependientes"],["new","Más recientes"],["old","Más antiguos"]],GF.sort)}</div>
     <button class="btn-gh btn-w btn-s" id="gToggle" style="margin-bottom:10px">${LIST?"Ocultar la lista":"Mostrar la lista ("+fl.length+")"}</button>
-    ${!LIST?"":(S.guests.length?`<ul class="lst" id="gList">${fl.map(list).join("")}</ul>`:`<div class="empty">Nadie en la lista todavía</div>`)}`;})()}
+    ${!LIST?"":(()=>{ if(!S.guests.length) return `<div class="empty">Nadie en la lista todavía</div>`;
+      const r=pgCorta("gente",fl,25);
+      if(!r.items.length) return `<div class="empty">Nadie con esos filtros</div>`;
+      return `<ul class="lst" id="gList">${r.items.map(list).join("")}</ul>${pgBarra("gente",r,25)}`;})()}`;})()}
   </div>
 
   <div class="card">
@@ -4145,9 +4311,16 @@ document.addEventListener("click",e=>{
     LIST=true; localStorage.setItem("mngostat.list","1");
     render(); toast(GF.trust===""?"Filtro quitado":"Lista filtrada por confianza"); return; }
 
-  /* páginas de «les falta sacar pase» */
-  if(a("data-rpag")!==null && a("data-rpag")!==undefined){
-    RPAGE=Math.max(0,+a("data-rpag")||0); render(); window.scrollTo(0,0); return; }
+  /* paginación de cualquier lista */
+  if(a("data-pgn")){ const pr=a("data-pgn").split("|");
+    PGN[pr[0]]=Math.max(0,+pr[1]||0); reRender(); return; }
+  /* cerrar la ficha abierta dentro de un renglón */
+  if(a("data-reg-cerrar")){ RSEL=null; reRender(); return; }
+  if(a("data-pad-cerrar")){ PADSEL=null; reRender(); return; }
+  /* saltar a un padrino en Registro */
+  if(a("data-pad-go")){ PADSEL=a("data-pad-go");
+    SEC["rPad"]=true; try{ localStorage.setItem(SECK,JSON.stringify(SEC)); }catch(e){}
+    GU=null; go("registro"); return; }
   /* abrir la ficha desde un botón */
   if(a("data-gficha")){ GSCROLL=0; GU=a("data-gficha");
     TAB="gente"; localStorage.setItem("mngostat.tab","gente");
@@ -4268,10 +4441,10 @@ document.addEventListener("click",e=>{
 
 document.addEventListener("input",e=>{
   const t=e.target; if(t.id!=="gQ") return;
-  GF.q=t.value; const q=norm(t.value||"").trim(); let n=0;
-  const okIds=new Set(gFiltered().map(g=>g.id));
-  document.querySelectorAll("#gList > li").forEach(li=>{const show=!q||(li.dataset.n||"").includes(q); li.style.display=show?"":"none"; if(show)n++;});
-  const c=$("#gCount"); if(c) c.textContent=gCountTxt(okIds.size);
+  GF.q=t.value; PGN["gente"]=0;
+  const p=t.selectionStart; reRender();
+  const n=document.getElementById("gQ");
+  if(n){ n.focus(); try{ n.setSelectionRange(p,p); }catch(_){} }
 });
 document.addEventListener("change",e=>{
   const t=e.target;
@@ -4290,9 +4463,13 @@ document.addEventListener("change",e=>{
     s3.cat=t.value; save("supplies","clasificó "+s3.name+" como "+t.value,s3.id); return;}
   if(t.dataset.r){S.ratios[t.dataset.r]=+t.value||0;save("ratios","cambió la proporción "+t.dataset.r+" a "+t.value);return;}
   if(t.id==="gFSex"||t.id==="gFConf"||t.id==="gSort"||t.id==="gFTrust"||t.id==="gFTag"){
-    GF[{gFSex:"sex",gFConf:"conf",gSort:"sort",gFTrust:"trust",gFTag:"tag"}[t.id]]=t.value;render();return;}
+    GF[{gFSex:"sex",gFConf:"conf",gSort:"sort",gFTrust:"trust",gFTag:"tag"}[t.id]]=t.value;
+    PGN["gente"]=0; reRender(); return;}
   if(t.id==="rFF"||t.id==="rFT"||t.id==="rFG"){
-    RF[{rFF:"f",rFT:"trust",rFG:"tag"}[t.id]]=t.value; RPAGE=0; render(); return;}
+    RF[{rFF:"f",rFT:"trust",rFG:"tag"}[t.id]]=t.value; PGN["falta"]=0; reRender(); return;}
+  if(t.id==="rCF"||t.id==="rCS"||t.id==="rCG"){
+    RC[{rCF:"f",rCS:"sort",rCG:"tag"}[t.id]]=t.value; PGN["con"]=0; reRender(); return;}
+  if(t.dataset.pgsz){ pgSet(t.dataset.pgsz,t.value); reRender(); return;}
   if(t.dataset.sqv){const s=S.supplies.find(x=>x.id===t.dataset.sqv);if(!s)return;
     const v=String(t.value).trim().replace(/[−–]/g,"-").replace(",",".");const cur=+s.qty||0;let n;
     if(/^[+-]\s*\d+(\.\d+)?$/.test(v)) n=cur+parseFloat(v.replace(/\s/g,""));
@@ -4442,9 +4619,10 @@ setInterval(flush,15000);
 const ROOMP="antromango4_pub";
 let PUB={roster:{},needs:{},live:{},reglas:""}, PUBon=false, PUBDET={}, PUBSEL=null;
 let PUQ="", SUPQ="", SUPSEL=null, REGQ="";
-let RSEL=null, RPQ="", RPAGE=0, PADSEL=null;
-let RF={f:"",trust:"",tag:""};
-const RPP=20;   /* cuántos caben en una página de «les falta» */
+let RSEL=null, RPQ="", PADSEL=null;
+let RF={f:"",trust:"",tag:""};            /* filtros de «les falta sacar pase» */
+let RC={f:"",tag:"",sort:"nuevo"};        /* filtros de «quién tiene pase» */
+let PADQ="";                              /* buscador de padrinos */
 let SCAN={on:false,stream:null,raf:0,last:"",lastTs:0,msg:null};
 let PUBSIG="", pubTimer=0;
 let PUBERR="", PUBERRTS=0, PUBAUTO=true;
@@ -4638,7 +4816,7 @@ async function pubDetalle(gid){
   if(PUBDET[gid]||!db) return;
   try{ const s=await fns.get(fns.ref(db,ROOMP+"/reg/"+gid)); PUBDET[gid]=s.exists()?s.val():{}; }
   catch(e){ PUBDET[gid]={}; }
-  render();
+  reRender();
 }
 /* ------------------------------------------------------------
    Cambiar el código de alguien sin tocarle el NIP.
@@ -4953,24 +5131,19 @@ function vPuerta(){
    ============================================================ */
 /* ------------------------------------------------------------
    Quién invitó a quién.
-   Se juntan dos cosas distintas: lo que el propio invitado declaró
-   al sacar su pase, y los avales que el consejo le puso en Gente.
-   Cada renglón dice de dónde viene.
+   Solo cuenta lo que el propio invitado declaró al sacar su pase,
+   en live/<gid>/inv. Los avales de Gente son otra cosa, dicen quién
+   lo conoce y no quién lo trae, así que aquí no entran.
    ------------------------------------------------------------ */
 function padrinos(){
   const G=S.guests||[], L=PUB.live||{}, map={};
-  const mete=(nombre,g,via)=>{
+  G.forEach(g=>{
+    const lv=L[g.id];
+    const nombre=lv&&lv.inv&&lv.inv.name;
     if(!nombre) return;
     const k=norm(nombre); if(!k) return;
     if(!map[k]) map[k]={k:k,name:nombre,items:[]};
-    const ya=map[k].items.find(x=>x.g.id===g.id);
-    if(ya){ if(ya.via.indexOf(via)<0) ya.via.push(via); }
-    else map[k].items.push({g:g,via:[via]});
-  };
-  G.forEach(g=>{
-    const lv=L[g.id];
-    if(lv&&lv.inv&&lv.inv.name) mete(lv.inv.name,g,"declarado");
-    knownBy(g).forEach(i=>{ if(i==="legacy") return; mete(nombreAval(i),g,"aval"); });
+    if(!map[k].items.find(x=>x.g.id===g.id)) map[k].items.push({g:g});
   });
   return Object.keys(map).map(k=>map[k])
     .sort((x,y)=>y.items.length-x.items.length||x.name.localeCompare(y.name,"es",{sensitivity:"base"}));
@@ -4985,8 +5158,10 @@ function padrinoDetalle(p){
   const vip=l.filter(x=>x.g.vip||x.g.pvip);
   const pase=l.filter(x=>L[x.g.id]).length;
   const dentro=l.filter(x=>L[x.g.id]&&L[x.g.id].entry&&L[x.g.id].entry.ts).length;
-  const sinAval=l.filter(x=>puntos(x.g)===0).length;
+  const fuera=n-dentro;
   const porc=v=>n?Math.round(v/n*100)+"%":"—";
+  const K="ah:"+p.k;
+  const r=pgCorta(K,l,10);
   return `
     <div class="grid g3" style="margin-top:12px">
       <div class="stat"><div class="k">Trae</div><div class="v">${n}</div><div class="u">personas</div></div>
@@ -4996,7 +5171,7 @@ function padrinoDetalle(p){
     <div class="grid g3" style="margin-top:10px">
       <div class="stat"><div class="k">VIP</div><div class="v vip">${vip.length}</div><div class="u">${porc(vip.length)}</div></div>
       <div class="stat"><div class="k">Con QR</div><div class="v">${pase}</div><div class="u">${porc(pase)} · ${dentro} dentro</div></div>
-      <div class="stat"><div class="k">Sin aval</div><div class="v ${sinAval?"red":"grn"}">${sinAval}</div><div class="u">${porc(sinAval)}</div></div>
+      <div class="stat"><div class="k">Falta entrar</div><div class="v ${fuera?"yel":"grn"}">${fuera}</div><div class="u">${porc(fuera)}</div></div>
     </div>
     ${n?`<div class="split" style="margin-top:12px">
       <i style="width:${M/n*100}%;background:var(--tea)">${M?M+" H":""}</i>
@@ -5005,15 +5180,16 @@ function padrinoDetalle(p){
     </div>`:""}
     ${vip.length?`<div class="tiny" style="margin-top:10px">VIP que trae: ${vip.map(x=>esc(x.g.name)).join(", ")}</div>`:""}
     <hr class="sep">
-    <div class="tiny" style="margin-bottom:8px">A quiénes invitó${l.length>60?" (se muestran los primeros 60 de "+l.length+")":""}</div>
-    <ul class="lst">${l.slice(0,60).map(x=>{
+    <div class="tiny" style="margin-bottom:8px">A quiénes invitó</div>
+    <ul class="lst">${r.items.map(x=>{
       const lv=L[x.g.id];
-      return `<li data-gopen="${x.g.id}">
+      return `<li data-reg-sel="${x.g.id}">
         <span class="pill ${x.g.sex==="M"?"p-m":x.g.sex==="F"?"p-f":"p-q"}">${x.g.sex==="M"?"H":x.g.sex==="F"?"M":"?"}</span>
         <div class="li-main"><div class="li-t">${esc(x.g.name)} ${x.g.pvip?'<span class="mk pvip">♛</span>':x.g.vip?'<span class="mk vip">VIP</span>':""}</div>
-        <div class="li-s">${folio(x.g.num)} · ${x.via.join(" y ")} · ${lv?(lv.entry&&lv.entry.ts?"ya entró":"con QR"):"sin pase"}</div></div>
+        <div class="li-s">${folio(x.g.num)} · ${lv?(lv.entry&&lv.entry.ts?"ya entró":"con QR"):"sin pase"}</div></div>
         <span class="pill ${lv?"p-ok":"p-n"}">${lv?"✓":"—"}</span></li>`;
-      }).join("")}</ul>`;
+      }).join("")}</ul>
+    ${pgBarra(K,r,10)}`;
 }
 
 /* ============================================================
@@ -5029,41 +5205,73 @@ function vRegistro(){
                      X:l.filter(g=>g.sex!=="M"&&g.sex!=="F").length});
   const sl=porSexo(G), sp=porSexo(conPase), sd=porSexo(dentro);
   const tasa=(a,b)=>b?Math.round(a/b*100)+"%":"—";
+  const selF=(id,opts,v)=>`<select id="${id}">${opts.map(([k,l])=>
+    `<option value="${k}"${k===v?" selected":""}>${l}</option>`).join("")}</select>`;
+  const az=(x,y)=>x.name.localeCompare(y.name,"es",{sensitivity:"base"});
+
+  /* banco de filtros, el mismo para las dos listas */
+  const EXF={ "":()=>true,
+    F:g=>g.sex==="F", M:g=>g.sex==="M", Q:g=>g.sex!=="M"&&g.sex!=="F",
+    vip:g=>!!g.vip, pvip:g=>!!g.pvip, anyvip:g=>!!(g.vip||g.pvip),
+    flag:g=>!!g.flag, danger:g=>!!g.danger, smoke:g=>!!g.smoke,
+    nocon:g=>!!g.nocon, known:g=>puntos(g)>0, noaval:g=>puntos(g)===0,
+    si:g=>g.conf==="si", tal:g=>g.conf==="tal", wa:g=>!!g.wa, ig:g=>!!g.ig,
+    dentro:g=>!!(L[g.id]&&L[g.id].entry&&L[g.id].entry.ts),
+    fuera:g=>!!(L[g.id]&&!(L[g.id].entry&&L[g.id].entry.ts)),
+    tok:g=>!!(L[g.id]&&L[g.id].tok) };
+  const OPTS=[["","Todos"],["F","Mujeres"],["M","Hombres"],["Q","Sin clasificar"],
+    ["anyvip","Cualquier VIP"],["vip","Solo VIP"],["pvip","VIP del consejo"],
+    ["known","Con aval"],["noaval","Sin ningún aval"],
+    ["si","Confirmados"],["tal","Tal vez"],
+    ["flag","Con banderita"],["danger","Señalados !!"],["smoke","Fuman mota"],
+    ["nocon","No conocemos"],["wa","Con WhatsApp"],["ig","Con Instagram"]];
 
   /* buscador general: cualquiera de la lista, con pase o sin él */
   const nq=norm(REGQ);
   const hits=!nq?[]:G.filter(g=>{
       const k=norm(g.name)+" "+norm(g.nick)+" "+norm(g.full)+" "+String(g.num||"");
       return nq.split(" ").filter(Boolean).every(w=>k.indexOf(w)>=0);
-    }).slice(0,20);
-  const sel=RSEL?(G.find(g=>g.id===RSEL)||null):null;
+    }).sort(az);
+  const rh=pgCorta("hits",hits,10);
 
-  /* les falta sacar pase, con filtros y páginas */
-  const EXF={ "":()=>true,
-    F:g=>g.sex==="F", M:g=>g.sex==="M", Q:g=>g.sex!=="M"&&g.sex!=="F",
-    vip:g=>!!g.vip, pvip:g=>!!g.pvip, anyvip:g=>!!(g.vip||g.pvip),
-    flag:g=>!!g.flag, danger:g=>!!g.danger, smoke:g=>!!g.smoke,
-    nocon:g=>!!g.nocon, known:g=>puntos(g)>0, noaval:g=>puntos(g)===0,
-    si:g=>g.conf==="si", tal:g=>g.conf==="tal", wa:g=>!!g.wa };
-  const fn=EXF[RF.f]||EXF[""];
-  const falta=sinPase.filter(g=>fn(g)
+  /* les falta sacar pase */
+  const falta=sinPase.filter(g=>(EXF[RF.f]||EXF[""])(g)
       && (RF.trust===""||nivelConf(g)===+RF.trust)
-      && (!RF.tag||tagsDe(g).indexOf(RF.tag)>=0))
-    .sort((a,b)=>a.name.localeCompare(b.name,"es",{sensitivity:"base"}));
-  const paginas=Math.max(1,Math.ceil(falta.length/RPP));
-  const pag=Math.min(Math.max(0,RPAGE),paginas-1);
-  const trozo=falta.slice(pag*RPP,pag*RPP+RPP);
-  const selF=(id,opts,v)=>`<select id="${id}">${opts.map(([k,l])=>`<option value="${k}"${k===v?" selected":""}>${l}</option>`).join("")}</select>`;
+      && (!RF.tag||tagsDe(g).indexOf(RF.tag)>=0)).sort(az);
+  const rf=pgCorta("falta",falta,20);
 
-  /* quién tiene pase, buscable */
+  /* quién tiene pase, con sus propios filtros y orden */
   const npq=norm(RPQ);
-  let conL=conPase.slice();
+  let conL=conPase.filter(g=>(EXF[RC.f]||EXF[""])(g) && (!RC.tag||tagsDe(g).indexOf(RC.tag)>=0));
   if(npq){ const dig=npq.replace(/\D/g,"");
-    conL=conL.filter(g=>norm(g.name).indexOf(npq)>=0||(dig&&String(+g.num||0)===String(+dig))); }
-  conL.sort((x,y)=>(+((L[y.id]||{}).ts)||0)-(+((L[x.id]||{}).ts)||0));
+    conL=conL.filter(g=>norm(g.name).indexOf(npq)>=0||norm(g.nick||"").indexOf(npq)>=0
+      ||(dig&&String(+g.num||0)===String(+dig))); }
+  const ts=g=>+((L[g.id]||{}).ts)||0;
+  const ent=g=>+(((L[g.id]||{}).entry||{}).ts)||0;
+  const ORD={ nuevo:(x,y)=>ts(y)-ts(x)||az(x,y),
+              viejo:(x,y)=>ts(x)-ts(y)||az(x,y),
+              az:az, za:(x,y)=>-az(x,y),
+              entro:(x,y)=>ent(y)-ent(x)||ts(y)-ts(x),
+              folio:(x,y)=>(+x.num||0)-(+y.num||0) };
+  conL.sort(ORD[RC.sort]||ORD.nuevo);
+  const rc=pgCorta("con",conL,10);
 
-  const PAD=padrinos();
-  const padSel=PADSEL?PAD.find(p=>p.k===PADSEL):null;
+  /* padrinos */
+  let PAD=padrinos();
+  const npad=norm(PADQ);
+  if(npad) PAD=PAD.filter(p=>p.k.indexOf(npad)>=0);
+  const rp=pgCorta("pad",PAD,10);
+  const padSel=PADSEL?padrinos().find(p=>p.k===PADSEL):null;
+
+  /* un renglón de persona, con su ficha adentro cuando está abierta */
+  const fila=(g,sub)=>`<li style="flex-wrap:wrap" data-reg-sel="${g.id}">
+      <span class="pill ${L[g.id]?"p-ok":"p-bad"}">${L[g.id]?(L[g.id].entry&&L[g.id].entry.ts?"✓":"QR"):"—"}</span>
+      <div class="li-main"><div class="li-t">${esc(g.name)} ${puMarcas(g.id)}</div>
+      <div class="li-s">${sub}</div>
+      ${tagsDe(g).length?`<div style="margin-top:3px">${tagHTML(g)}</div>`:""}</div>
+      <div class="li-s">${RSEL===g.id?"▾":"›"}</div>
+      ${RSEL===g.id?regDetalle(g):""}
+    </li>`;
 
   return `
   <div class="card">
@@ -5085,74 +5293,51 @@ function vRegistro(){
   </div>
 
   <div class="card" style="border:2px solid rgba(139,92,246,.3)">
-    <h2>Buscar y cambiar un código</h2>
-    <p class="sub">cualquiera de los ${G.length}, con pase o sin él. Al cambiar el código, el anterior
-      deja de servir en la puerta y el invitado ve el nuevo al abrir su pase con su mismo NIP.</p>
+    <h2>Buscar a alguien</h2>
+    <p class="sub">cualquiera de los ${G.length}, con pase o sin él. Al abrir un renglón sale su código,
+      sus botones para hablarle y todo lo que la base guarda de él.</p>
     <div class="row"><input id="regQ" placeholder="Nombre, apodo o folio" value="${esc(REGQ)}" autocomplete="off"></div>
     ${nq&&!hits.length?`<div class="empty">Nadie con ese nombre o folio</div>`:""}
-    ${hits.length?`<ul class="lst">${hits.map(g=>`<li data-reg-sel="${g.id}">
-      <span class="pill ${L[g.id]?"p-ok":"p-bad"}">${L[g.id]?"QR":"—"}</span>
-      <div class="li-main"><div class="li-t">${esc(g.name)} ${puMarcas(g.id)}</div>
-      <div class="li-s">${folio(g.num)}${g.nick?" · "+esc(g.nick):""} · ${L[g.id]?(L[g.id].entry&&L[g.id].entry.ts?"ya entró":"con pase, sin entrar"):"sin pase"}</div></div>
-      <div class="li-s">${RSEL===g.id?"▾":"›"}</div></li>`).join("")}</ul>`:""}
-    ${sel?`<hr class="sep">
-      <h2>${esc(sel.name)}</h2>
-      <p class="sub">${folio(sel.num)}${sel.nick?" · "+esc(sel.nick):""}</p>
-      ${puAlerta(sel.id)}
-      ${qrTarjeta(sel.id)}
-      <hr class="sep">
-      <div class="tiny" style="margin-bottom:6px">Banderas</div>
-      ${banderasHTML(sel.id)}
-      <div class="tiny" style="margin:12px 0 0">Etiquetas</div>
-      ${tagPicker(sel)}
-      <button class="btn-gh btn-w btn-s" style="margin-top:12px" data-gficha="${sel.id}">Abrir su ficha completa</button>`:""}
+    ${rh.items.length?`<ul class="lst">${rh.items.map(g=>fila(g,
+        folio(g.num)+(g.nick?" · "+esc(g.nick):"")+" · "+
+        (L[g.id]?(L[g.id].entry&&L[g.id].entry.ts?"ya entró":"con pase, sin entrar"):"sin pase")
+      )).join("")}</ul>
+      ${pgBarra("hits",rh,10)}`:""}
   </div>
 
   <div class="card">
-    ${cab("rFalta","Les falta sacar pase",falta.length+(RF.f||RF.trust!==""||RF.tag?" con el filtro":"")+" de "+sinPase.length+" sin pase",true)}
+    ${cab("rFalta","Les falta sacar pase",rf.n+(RF.f||RF.trust!==""||RF.tag?" con el filtro":"")+" de "+sinPase.length+" sin pase",true)}
     ${!secOn("rFalta",true)?"":`
-    <div class="row" style="margin-top:12px">
-      ${selF("rFF",[["","Todos los que faltan"],["F","Mujeres"],["M","Hombres"],["Q","Sin clasificar"],
-        ["anyvip","Cualquier VIP"],["vip","Solo VIP"],["pvip","VIP del consejo"],
-        ["known","Con aval"],["noaval","Sin ningún aval"],
-        ["si","Confirmados"],["tal","Tal vez"],
-        ["flag","Con banderita"],["danger","Señalados !!"],["smoke","Fuman mota"],
-        ["nocon","No conocemos"],["wa","Con WhatsApp"]],RF.f)}
-    </div>
+    <div class="row" style="margin-top:12px">${selF("rFF",OPTS,RF.f)}</div>
     <div class="row">
       ${selF("rFT",[["","Cualquier confianza"]].concat(CONFLB.map((l,i)=>[String(i),l])),RF.trust)}
       ${selF("rFG",[["","Cualquier etiqueta"]].concat(tagsCat().map(t=>[t.id,t.n])),RF.tag)}
     </div>
-    ${trozo.length?`<ul class="lst">${trozo.map(g=>`<li style="flex-wrap:wrap" data-gopen="${g.id}">
-      <span class="pill ${g.sex==="M"?"p-m":g.sex==="F"?"p-f":"p-q"}">${g.sex==="M"?"H":g.sex==="F"?"M":"?"}</span>
-      <div class="li-main"><div class="li-t">${esc(g.name)} ${puMarcas(g.id)}</div>
-      <div class="li-s">${folio(g.num)} · ${puntos(g)?puntos(g)+" aval"+(puntos(g)===1?"":"es"):"sin aval"}${g.wa?" · "+esc(g.wa):""}</div>
-      ${tagsDe(g).length?`<div style="margin-top:3px">${tagHTML(g)}</div>`:""}</div>
-      ${g.wa?`<a class="btn-gh btn-s" target="_blank" rel="noopener"
-        href="https://wa.me/52${esc(String(g.wa).replace(/\D/g,""))}?text=${encodeURIComponent("Saca tu pase para "+(S.meta.name||S.meta.event||"la fiesta")+": https://freshmangoalex.github.io/antromango/")}">WA</a>`:""}
-      </li>`).join("")}</ul>
-      ${paginas>1?`<div class="pag">
-        <button class="btn-gh btn-s" style="flex:0 0 80px" data-rpag="${pag-1}" ${pag===0?"disabled":""}>← antes</button>
-        <div class="pt">página ${pag+1} de ${paginas} · ${pag*RPP+1} a ${Math.min(falta.length,pag*RPP+RPP)} de ${falta.length}</div>
-        <button class="btn-gh btn-s" style="flex:0 0 80px" data-rpag="${pag+1}" ${pag>=paginas-1?"disabled":""}>sigue →</button>
-      </div>`:""}`
+    ${rf.items.length?`<ul class="lst">${rf.items.map(g=>fila(g,
+        folio(g.num)+" · "+(puntos(g)?puntos(g)+" aval"+(puntos(g)===1?"":"es"):"sin aval")+(g.wa?" · "+esc(g.wa):"")
+      )).join("")}</ul>
+      ${pgBarra("falta",rf,20)}`
      :`<div class="empty">${sinPase.length?"Nadie con ese filtro":"Todos sacaron su pase"}</div>`}
     `}
   </div>
 
   <div class="card">
-    ${cab("rCon","Quién tiene pase",conPase.length+" sacados · "+dentro.length+" ya entraron",true)}
+    ${cab("rCon","Quién tiene pase",rc.n+(RC.f||RC.tag||npq?" con el filtro":"")+" de "+conPase.length+" · "+dentro.length+" ya entraron",true)}
     ${!secOn("rCon",true)?"":`
-    ${conPase.length?`<div class="row" style="margin:12px 0 10px"><input id="rpQ" placeholder="Buscar por nombre o folio" value="${esc(RPQ)}" autocomplete="off"></div>`:""}
-    ${conL.length?`<ul class="lst">${conL.map(g=>{
-      const lv=L[g.id], e=lv.entry&&lv.entry.ts;
-      return `<li data-reg-sel="${g.id}">
-        <span class="pill ${e?"p-ok":"p-vio"}">${e?"✓":"QR"}</span>
-        <div class="li-main"><div class="li-t">${esc(g.name)} ${puMarcas(g.id)}</div>
-        <div class="li-s">${folio(g.num)} · pase ${horaC(lv.ts)}${e?" · entró "+horaS(e):""}${lv.tok?" · código cambiado":""}</div>
-        ${lv.inv&&lv.inv.name?`<div class="li-s">lo invitó ${esc(lv.inv.name)}</div>`:""}</div>
-        <div class="li-s">${RSEL===g.id?"▾":"›"}</div></li>`;}).join("")}</ul>`
-     :`<div class="empty">${conPase.length?"Nadie con ese nombre":"Todavía nadie saca su pase"}</div>`}
+    ${conPase.length?`<div class="row" style="margin:12px 0 9px"><input id="rpQ" placeholder="Buscar por nombre, apodo o folio" value="${esc(RPQ)}" autocomplete="off"></div>
+    <div class="row">${selF("rCF",OPTS.concat([["dentro","Ya entraron"],["fuera","Con pase, sin entrar"],["tok","Con el código cambiado"]]),RC.f)}</div>
+    <div class="row">
+      ${selF("rCS",[["nuevo","Registro más reciente"],["viejo","Registro más antiguo"],
+        ["entro","Hora de entrada"],["az","A → Z"],["za","Z → A"],["folio","Por folio"]],RC.sort)}
+      ${selF("rCG",[["","Cualquier etiqueta"]].concat(tagsCat().map(t=>[t.id,t.n])),RC.tag)}
+    </div>`:""}
+    ${rc.items.length?`<ul class="lst">${rc.items.map(g=>{
+        const lv=L[g.id], e=lv.entry&&lv.entry.ts;
+        return fila(g, folio(g.num)+" · pase "+horaC(lv.ts)+(e?" · entró "+horaS(e):"")+(lv.tok?" · código cambiado":"")
+          +(invDe(g.id)?" · lo invitó "+esc(invDe(g.id)):""));
+      }).join("")}</ul>
+      ${pgBarra("con",rc,10)}`
+     :`<div class="empty">${conPase.length?"Nadie con ese filtro":"Todavía nadie saca su pase"}</div>`}
     `}
   </div>
 
@@ -5180,25 +5365,26 @@ function vRegistro(){
   </div>
 
   <div class="card">
-    ${cab("rPad","Quién invitó a quién",PAD.length?PAD.length+" padrinos · toca uno para ver a los suyos":"nadie declarado ni avalado todavía",false)}
+    ${cab("rPad","Quién invitó a quién",rp.n?rp.n+" padrinos · toca uno para ver a los suyos":"nadie ha declarado padrino todavía",false)}
     ${!secOn("rPad",false)?"":`
-    <p class="sub" style="margin-top:10px">junta lo que declaró cada invitado al sacar su pase con los avales
-      que el consejo puso en Gente. Cada renglón dice de dónde viene.</p>
-    ${PAD.length?`<ul class="lst">${PAD.map(p=>{
-      const L2=PUB.live||{};
+    <p class="sub" style="margin-top:10px">según lo que cada invitado declaró al sacar su pase. Quien no ha sacado
+      pase no aparece aquí, y los avales de Gente no cuentan: esos dicen quién lo conoce, no quién lo trae.</p>
+    <div class="row"><input id="padQ" placeholder="Buscar un padrino por nombre" value="${esc(PADQ)}" autocomplete="off"></div>
+    ${rp.items.length?`<ul class="lst">${rp.items.map(p=>{
       const F=p.items.filter(x=>x.g.sex==="F").length;
       const vip=p.items.filter(x=>x.g.vip||x.g.pvip).length;
-      const cp=p.items.filter(x=>L2[x.g.id]).length;
+      const cp=p.items.filter(x=>L[x.g.id]).length;
       const ab=PADSEL===p.k;
       return `<li style="flex-wrap:wrap" data-pad="${esc(p.k)}">
         <div class="li-main"><div class="li-t">${esc(p.name)}</div>
         <div class="li-s">${p.items.length} persona${p.items.length===1?"":"s"} · ${F} mujer${F===1?"":"es"} · ${vip} VIP · ${cp} con QR</div></div>
         <span class="pill ${p.items.length>=5?"p-mid":"p-n"}">${p.items.length}</span>
         <div class="li-s">${ab?"▾":"›"}</div>
-        ${ab?`<div style="flex:1 1 100%;min-width:0;margin-top:8px;padding-top:8px;border-top:1px solid var(--line)">
+        ${ab?`<div class="det"><div class="cerrar"><button class="btn-x" data-pad-cerrar="1">✕</button></div>
           ${padrinoDetalle(p)}</div>`:""}
-      </li>`;}).join("")}</ul>`
-     :`<div class="empty">Nadie ha declarado padrino y nadie tiene aval</div>`}
+      </li>`;}).join("")}</ul>
+      ${pgBarra("pad",rp,10)}`
+     :`<div class="empty">${npad?"Ningún padrino con ese nombre":"Nadie ha declarado quién lo invitó"}</div>`}
     `}
   </div>
   `;
@@ -5316,17 +5502,27 @@ document.addEventListener("click",e=>{
     pubDetalle(SUPSEL);
     render(); return;
   }
+  /* un clic dentro de la ficha ya abierta no la cierra: para eso está la ✕ */
+  const vivo=sel=>!e.target.closest("button")&&!e.target.closest("a")
+                  &&!e.target.closest("input")&&!e.target.closest("select");
   const rl=e.target.closest("[data-reg-sel]");
-  if(rl&&!e.target.closest("button")&&!e.target.closest("a")){
-    const g=rl.getAttribute("data-reg-sel");
-    RSEL = RSEL===g ? null : g;
-    render(); return;
+  if(rl&&vivo()){
+    const d=e.target.closest(".det");
+    if(!(d && d.closest("[data-reg-sel]")===rl)){
+      const g=rl.getAttribute("data-reg-sel");
+      RSEL = RSEL===g ? null : g;
+      if(RSEL) pubDetalle(RSEL);
+      reRender(); return;
+    }
   }
   const pd=e.target.closest("[data-pad]");
-  if(pd&&!e.target.closest("button")&&!e.target.closest("a")&&!e.target.closest("[data-gopen]")){
-    const k=pd.getAttribute("data-pad");
-    PADSEL = PADSEL===k ? null : k;
-    render(); return;
+  if(pd&&vivo()&&!e.target.closest("[data-reg-sel]")){
+    const d2=e.target.closest(".det");
+    if(!(d2 && d2.closest("[data-pad]")===pd)){
+      const k=pd.getAttribute("data-pad");
+      PADSEL = PADSEL===k ? null : k;
+      reRender(); return;
+    }
   }
 });
 document.addEventListener("input",e=>{
@@ -5335,10 +5531,12 @@ document.addEventListener("input",e=>{
     const n=document.getElementById("puQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } return; }
   if(t.id==="supQ"){ SUPQ=t.value; const p=t.selectionStart; render();
     const n=document.getElementById("supQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } return; }
-  if(t.id==="regQ"){ REGQ=t.value; const p=t.selectionStart; render();
+  if(t.id==="regQ"){ REGQ=t.value; PGN["hits"]=0; const p=t.selectionStart; reRender();
     const n=document.getElementById("regQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } return; }
-  if(t.id==="rpQ"){ RPQ=t.value; const p=t.selectionStart; render();
+  if(t.id==="rpQ"){ RPQ=t.value; PGN["con"]=0; const p=t.selectionStart; reRender();
     const n=document.getElementById("rpQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } return; }
+  if(t.id==="padQ"){ PADQ=t.value; PGN["pad"]=0; const p=t.selectionStart; reRender();
+    const n=document.getElementById("padQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){} } return; }
 });
 
 /* ============================================================
